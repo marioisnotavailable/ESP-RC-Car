@@ -1,5 +1,7 @@
-<<<<<<< HEAD
-yalla
-=======
-einen mega großen dildo
->>>>>>> 4d0fd546c242a51af18f2d3838262a220f0a55bc
+esp32 s3 (16mb) mit extra Antenne connector
+usb c
+usb c pd 12V
+uart pads
+spannungswandler
+
+
