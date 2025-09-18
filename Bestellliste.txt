@@ -1,0 +1,7 @@
+esp32 s3 (16mb) mit extra Antenne connector
+usb c
+usb c pd 12V
+uart pads
+spannungswandler
+
+
