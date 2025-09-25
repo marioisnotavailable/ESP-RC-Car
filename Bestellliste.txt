@@ -6,3 +6,4 @@ spannungswandler
 motor Color: Black 17.5T 5500KV https://de.aliexpress.com/item/1005008905655132.html
 motor treiber Color: 18A ESC https://de.aliexpress.com/item/1005007796294832.html
 servo motor Color: S0009M-9g https://de.aliexpress.com/item/1005007472804849.html
+NRF24L01 2,4 GHz Wireless Transceiver Module https://github.com/nRF24/RF24
