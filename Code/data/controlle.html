@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>RC-Car Control</title>
+<style>
+  body { background:black; color:white; text-align:center; }
+  #pad { width:300px; height:300px; background:#333; margin:20px auto; border-radius:50%; }
+</style>
+</head>
+<body>
+<h2>RC Car Controller</h2>
+<div id="pad"></div>
+
+<script>
+let ws = new WebSocket("ws://192.168.4.1:81/");
+let centerX, centerY, pad;
+
+window.onload = ()=>{
+  pad = document.getElementById("pad");
+  let r = pad.clientWidth/2;
+  centerX = pad.offsetLeft + r;
+  centerY = pad.offsetTop + r;
+
+  pad.addEventListener("touchmove", handle, false);
+  pad.addEventListener("touchend", ()=>send(0,0,0), false);
+};
+
+function handle(e){
+  e.preventDefault();
+  let t = e.touches[0];
+  let dx = (t.pageX - centerX) / 100; // -3..+3 ungefähr
+  let dy = (centerY - t.pageY) / 100;
+
+  let steer = Math.max(-1000, Math.min(1000, dx*500));
+  let thr   = Math.max(-1000, Math.min(1000, dy*500));
+  send(thr, steer, 0);
+}
+
+function send(thr, steer, flags){
+  if(ws.readyState === 1){
+    ws.send(`${Math.round(thr)},${Math.round(steer)},${flags}`);
+  }
+}
+</script>
+</body>
+</html>
