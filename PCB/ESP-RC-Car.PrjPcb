@@ -117,6 +117,10 @@ DItemRevisionGUID=
 GenerateClassCluster=0
 DocumentUniqueId=DTUGQLKQ
 
+[GeneratedDocument1]
+DocumentPath=Project Outputs for ESP-RC-Car\ESP-RC-Car.nsx
+DItemRevisionGUID=
+
 [Configuration1]
 Name=Sources
 ParameterCount=0
@@ -248,6 +252,10 @@ OutputName1=Mixed Sim
 OutputDocumentPath1=
 OutputVariantName1=
 OutputDefault1=0
+Configuration1_Name1=ForceUpdateSettings
+Configuration1_Item1=False
+Configuration1_Name2=OutputConfigurationParameter1
+Configuration1_Item2=Record=AdvSimNetlistView|SimulationName=Mixed Sim|ProfileId=VSMDYLOQ|OldCfgLoaded=True|DocumentPath=Sheet1.SchDoc
 
 [OutputGroup3]
 Name=Documentation Outputs
