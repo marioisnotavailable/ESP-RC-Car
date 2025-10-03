@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Gamepad Test</title>
+<style>
+  body { font-family: monospace; background:#111; color:#0f0; }
+  pre { background:#000; padding:10px; border-radius:5px; }
+</style>
+</head>
+<body>
+<h2>Gamepad Test</h2>
+<p>Schließe einen Controller an und bewege die Sticks / drücke Buttons.</p>
+<pre id="out">warte auf Gamepad...</pre>
+
+<script>
+let hasGamepad = false;
+let out = document.getElementById("out");
+
+window.addEventListener("gamepadconnected", (e)=>{
+  hasGamepad = true;
+  out.textContent = "Gamepad verbunden: " + e.gamepad.id;
+});
+
+window.addEventListener("gamepaddisconnected", (e)=>{
+  hasGamepad = false;
+  out.textContent = "Gamepad getrennt";
+});
+
+function loop(){
+  if (hasGamepad){
+    let gp = navigator.getGamepads()[0];
+    if (gp){
+      let txt = "ID: " + gp.id + "\n";
+      txt += "Axes ("+gp.axes.length+"):\n";
+      gp.axes.forEach((a,i)=>{ 
+        txt += "  Axis " + i + ": " + a.toFixed(3) + "\n"; 
+      });
+      txt += "Buttons ("+gp.buttons.length+"):\n";
+      gp.buttons.forEach((b,i)=>{ 
+        txt += "  Btn " + i + ": " + (b.pressed?"pressed":"-") + " val=" + b.value.toFixed(2) + "\n"; 
+      });
+      out.textContent = txt;
+    }
+  }
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
