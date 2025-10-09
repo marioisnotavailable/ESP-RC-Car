@@ -8,6 +8,7 @@
 #define WIFI_PASS "12345678"
 const uint8_t WIFI_CH = 6;
 #define LED_PIN 13
+#define LENKUNG_PIN 11
 
 WebServer http(80);
 WebSocketsServer ws(81);
