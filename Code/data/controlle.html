@@ -5,35 +5,78 @@
 <title>RC-Car Control</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <style>
-  body { background:#000; color:#fff; text-align:center; font-family:sans-serif; }
-  #container { display:flex; justify-content:space-around; gap:24px; margin-top:20px; flex-wrap:wrap; }
+  :root{
+    --stick-size: 220px;
+    --knob-size: 88px;
+    --gap: 48px;
+  }
+  @media (max-width: 700px){
+    :root{
+      --stick-size: 180px;
+      --knob-size: 72px;
+      --gap: 28px;
+    }
+  }
+
+  html, body { height:100%; }
+  body {
+    margin:0; background:#000; color:#fff; font-family:sans-serif;
+    display:flex; flex-direction:column;
+  }
+
+  header { text-align:center; padding:18px 12px 6px; }
+  h2 { margin:0; }
+
+  /* Hauptbereich: Sticks perfekt zentriert */
+  .stage {
+    flex:1;
+    display:flex;
+    align-items:center;     /* vertikal zentriert */
+    justify-content:center; /* horizontal zentriert */
+    gap: var(--gap);
+    flex-wrap:wrap;
+    padding: 12px;
+  }
+
   .stick {
-    width:200px; height:200px; background:#222; border-radius:50%;
-    position:relative; touch-action:none; user-select:none;
+    width:var(--stick-size);
+    height:var(--stick-size);
+    background:#1f1f1f;
+    border-radius:50%;
+    position:relative;
+    touch-action:none; user-select:none;
+    box-shadow: inset 0 0 20px rgba(255,255,255,0.05);
   }
   .knob {
-    width:80px; height:80px; background:#777; border-radius:50%;
-    position:absolute; left:50%; top:50%; margin-left:-40px; margin-top:-40px;
-    transition:transform 0.05s linear;
+    width:var(--knob-size);
+    height:var(--knob-size);
+    background:#7a7a7a;
+    border-radius:50%;
+    position:absolute;
+    left:50%; top:50%;
+    transform: translate(-50%,-50%); /* Start exakt Mitte */
+    transition: transform 0.05s linear;
+    box-shadow: 0 8px 18px rgba(0,0,0,0.35), inset 0 0 10px rgba(255,255,255,0.08);
   }
-  .info { margin-top:16px; color:#aaa; line-height:1.4; }
-  code { color:#ddd; }
-  .status { margin-top:10px; font-size:14px; color:#9ad; }
+
+  .info { text-align:center; color:#a9b7c6; line-height:1.45; padding: 8px 12px 18px; }
+  code { color:#d0d0d0; }
+  .status { margin-top:8px; font-size:14px; color:#9ad; }
 </style>
 </head>
 <body>
-<h2>RC Car Controller</h2>
+  <header><h2>RC Car Controller</h2></header>
 
-<div id="container">
-  <div id="stick-throttle" class="stick"><div class="knob" id="knob-thr"></div></div>
-  <div id="stick-steer"    class="stick"><div class="knob" id="knob-ste"></div></div>
-</div>
+  <main class="stage">
+    <div id="stick-throttle" class="stick"><div class="knob" id="knob-thr"></div></div>
+    <div id="stick-steer"    class="stick"><div class="knob" id="knob-ste"></div></div>
+  </main>
 
-<div class="info">
-  <p><b>Steuerung:</b> Touch-Sticks, Tastatur (<code>W/S</code> vor/zurück, <code>A/D</code> links/rechts) <br>
-  <b>Gamepad:</b> linker Stick = Lenkung, <b>R2</b> = vorwärts, <b>L2</b> = rückwärts</p>
-  <div class="status" id="gpStatus">Gamepad: nicht verbunden</div>
-</div>
+  <div class="info">
+    <p><b>Steuerung:</b> Touch-Sticks, Tastatur (<code>W/S</code> vor/zurück, <code>A/D</code> links/rechts)<br>
+       <b>Gamepad:</b> linker Stick = Lenkung, <b>R2</b> = vorwärts, <b>L2</b> = rückwärts</p>
+    <div class="status" id="gpStatus">Gamepad: nicht verbunden</div>
+  </div>
 
 <script>
 /*** === WebSocket === ***/
@@ -58,21 +101,20 @@ let steer    = 0;   // -1000..+1000
 const MAXVAL = 1000;
 
 /*** === Deadzone & Glättung === ***/
-const DZ      = 0.08;     // 8% Deadzone für Gamepad-Achsen
-const ALPHA_S = 0.30;     // Glättung Lenkung (0..1), höher = weicher
-const ALPHA_T = 0.30;     // Glättung Gas
+const DZ      = 0.08;
+const ALPHA_S = 0.30;
+const ALPHA_T = 0.30;
 let steerFilt = 0;
 let thrFilt   = 0;
 
 function applyDeadzone(v, dz=DZ){
   const a = Math.abs(v);
   if(a < dz) return 0;
-  // neu skalieren, damit am Rand 1 erreicht wird
   const s = (a - dz) / (1 - dz);
   return Math.sign(v) * s;
 }
 
-/*** === Touch-Sticks (wie gehabt) === ***/
+/*** === Touch-Sticks === ***/
 function setupStick(id, verticalOnly){
   const stick = document.getElementById(id);
   const knob  = stick.querySelector(".knob");
@@ -105,9 +147,10 @@ function setupStick(id, verticalOnly){
     }
   }, {passive:false});
 
-  stick.addEventListener("touchend", e=>{
-    if(verticalOnly){ throttle = 0; knob.style.transform = `translate(-50%,-50%)`; }
-    else { steer = 0; knob.style.transform = `translate(-50%,-50%)`; }
+  stick.addEventListener("touchend", ()=>{
+    if(verticalOnly){ throttle = 0; }
+    else { steer = 0; }
+    knob.style.transform = `translate(-50%,-50%)`;
   });
 }
 
@@ -139,58 +182,38 @@ let haveGamepad = false;
 let gpIndex = -1;
 const gpStatusEl = document.getElementById("gpStatus");
 
-// Poll-Loop (über rAF), wir lesen Rohwerte und mappen dann unten
 function readGamepad(){
   const gps = navigator.getGamepads ? navigator.getGamepads() : [];
   const gp  = gps[gpIndex] || null;
   if(!gp) return { steer: null, thr: null };
 
-  // Achsen/Buttons robust lesen (Browser/Controller variieren):
-  // Lenkung: linker Stick X = axes[0]
   let steerAxis = gp.axes && gp.axes.length > 0 ? gp.axes[0] : 0; // -1..+1
-
-  // Trigger:
-  // - Bei Xbox häufig buttons[7] (R2) & buttons[6] (L2) mit value 0..1
-  // - Bei PS ggf. axes[5]=R2, axes[4]=L2 mit 0..1 oder -1..1
   let r2 = 0, l2 = 0;
 
   if (gp.buttons && gp.buttons.length >= 8) {
-    // bevorzugt Button-Values (0..1)
     r2 = Math.max(r2, gp.buttons[7].value || 0);
     l2 = Math.max(l2, gp.buttons[6].value || 0);
   }
   if (gp.axes && gp.axes.length >= 6) {
-    // Achsen-Variante mit 0..1 oder -1..1
-    let aR2 = gp.axes[5]; // oft R2
-    let aL2 = gp.axes[4]; // oft L2
-    // normalize: wenn -1..+1, dann auf 0..1 mappen
+    let aR2 = gp.axes[5], aL2 = gp.axes[4];
     if (typeof aR2 === "number") r2 = Math.max(r2, (aR2 <= 1 && aR2 >= -1) ? (aR2 + 1)/2 : aR2);
     if (typeof aL2 === "number") l2 = Math.max(l2, (aL2 <= 1 && aL2 >= -1) ? (aL2 + 1)/2 : aL2);
   }
 
-  // Deadzone Lenkung
   steerAxis = applyDeadzone(steerAxis);
+  const thrAxis = r2 - l2;
 
-  // Throttle aus R2-L2 (vor/rück)
-  const thrAxis = r2 - l2; // -1..+1
-
-  return {
-    steer: steerAxis * MAXVAL,
-    thr:   thrAxis   * MAXVAL
-  };
+  return { steer: steerAxis * MAXVAL, thr: thrAxis * MAXVAL };
 }
 
 window.addEventListener("gamepadconnected", (e)=>{
   haveGamepad = true;
   gpIndex = e.gamepad.index;
   gpStatusEl.textContent = `Gamepad: verbunden (${e.gamepad.id})`;
-  console.log("Gamepad connected:", e.gamepad);
 });
-
 window.addEventListener("gamepaddisconnected", (e)=>{
   if (e.gamepad.index === gpIndex) {
-    haveGamepad = false;
-    gpIndex = -1;
+    haveGamepad = false; gpIndex = -1;
     gpStatusEl.textContent = "Gamepad: nicht verbunden";
   }
 });
@@ -201,15 +224,15 @@ const SEND_MS = Math.round(1000 / SEND_HZ);
 let lastSend = 0;
 
 function loop(ts){
-  // Keyboard Einfluss
+  // Tastatur
   if(keys.w) throttle = Math.min(MAXVAL, throttle + KEY_STEP);
   if(keys.s) throttle = Math.max(-MAXVAL, throttle - KEY_STEP);
   if(keys.a) steer    = Math.max(-MAXVAL, steer - KEY_STEP);
   if(keys.d) steer    = Math.min(MAXVAL,  steer + KEY_STEP);
-  if(!keys.w && !keys.s) throttle *= 0.85;  // ausrollen
-  if(!keys.a && !keys.d) steer    *= 0.75;  // zurück zur Mitte
+  if(!keys.w && !keys.s) throttle *= 0.85;
+  if(!keys.a && !keys.d) steer    *= 0.75;
 
-  // Gamepad liest Rohwerte, überschreibt weicher Tastatur/Touch
+  // Gamepad
   if (haveGamepad) {
     const gpVals = readGamepad();
     if (gpVals.steer !== null) steer   = gpVals.steer;
@@ -220,19 +243,18 @@ function loop(ts){
   steerFilt = ALPHA_S * steerFilt + (1-ALPHA_S) * steer;
   thrFilt   = ALPHA_T * thrFilt   + (1-ALPHA_T) * throttle;
 
-  // Kappen
+  // Begrenzen
   steerFilt = Math.max(-MAXVAL, Math.min(MAXVAL, steerFilt));
   thrFilt   = Math.max(-MAXVAL, Math.min(MAXVAL, thrFilt));
 
-  // Senden mit fixer Rate
+  // Senden 50 Hz + Knobs visual mitführen
   if (ts - lastSend >= SEND_MS) {
     lastSend = ts;
     send(thrFilt, steerFilt, 0);
-    // Joystick-Knobs leicht mitführen (nur visuell)
-    const kThr = document.getElementById("knob-thr");
-    const kSte = document.getElementById("knob-ste");
-    kThr.style.transform = `translate(-50%,-50%) translate(0px, ${(-thrFilt/MAXVAL)*80}px)`;
-    kSte.style.transform = `translate(-50%,-50%) translate(${(steerFilt/MAXVAL)*80}px, 0px)`;
+    document.getElementById("knob-thr").style.transform =
+      `translate(-50%,-50%) translate(0px, ${(-thrFilt/MAXVAL)*(0.36*parseInt(getComputedStyle(document.documentElement).getPropertyValue('--stick-size')))}px)`;
+    document.getElementById("knob-ste").style.transform =
+      `translate(-50%,-50%) translate(${(steerFilt/MAXVAL)*(0.36*parseInt(getComputedStyle(document.documentElement).getPropertyValue('--stick-size')))}px, 0px)`;
   }
 
   requestAnimationFrame(loop);
