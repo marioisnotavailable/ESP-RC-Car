@@ -1,4 +1,4 @@
-package com.example.rc_car_controller // <-- anpassen!
+package com.example.esp_rc_car
 
 import android.os.Bundle
 import android.view.InputDevice
