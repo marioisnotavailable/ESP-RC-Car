@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:io'; // WebSocket (mobile/desktop)
-import 'dart:math' as math;
+// removed unused import
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -50,7 +50,6 @@ class _ControllerPageState extends State<ControllerPage> {
   // Gamepad (von Android native via EventChannel)
   static const _gamepadChannel = EventChannel('rc.gamepad/events');
   StreamSubscription? _gpSub;
-  bool _haveGamepad = false;
   String _gpLabel = 'Gamepad: nicht verbunden';
 
   // Loop (50 Hz)
@@ -77,7 +76,7 @@ class _ControllerPageState extends State<ControllerPage> {
   // === WebSocket verbinden / reconnect ===
   Future<void> _connectWS() async {
     try {
-      _ws = await WebSocket.connect(wsUrl, pingInterval: const Duration(seconds: 5));
+  _ws = await WebSocket.connect(wsUrl);
       _ws?.done.whenComplete(() => _scheduleReconnect());
       setState(() {});
     } catch (_) {
@@ -117,7 +116,7 @@ class _ControllerPageState extends State<ControllerPage> {
       // event: { "lx": double, "r2": double, "l2": double, "connected": bool, "id": "..." }
       if (event is Map) {
         final connected = (event['connected'] as bool?) ?? false;
-        _haveGamepad = connected;
+  // connected state is shown via _gpLabel; no separate flag needed
         final id = (event['id'] as String?) ?? '';
         _gpLabel = connected ? 'Gamepad: verbunden ($id)' : 'Gamepad: nicht verbunden';
 
@@ -135,7 +134,6 @@ class _ControllerPageState extends State<ControllerPage> {
         if (mounted) setState(() {});
       }
     }, onError: (_) {
-      _haveGamepad = false;
       _gpLabel = 'Gamepad: nicht verbunden';
       if (mounted) setState(() {});
     });
@@ -311,7 +309,7 @@ class _JoystickState extends State<Joystick> {
           shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
-              color: Colors.white.withOpacity(0.05),
+              color: Color(0x0DFFFFFF),
               blurRadius: 20,
               spreadRadius: -5,
             ),
