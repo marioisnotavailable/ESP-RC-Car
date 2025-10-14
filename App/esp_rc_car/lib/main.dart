@@ -7,7 +7,13 @@ import 'package:flutter/services.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const RCCarApp());
+  // Force landscape orientation for easier side-by-side (seitwärts) control
+  SystemChrome.setPreferredOrientations([
+    DeviceOrientation.landscapeLeft,
+    DeviceOrientation.landscapeRight,
+  ]).then((_) {
+    runApp(const RCCarApp());
+  });
 }
 
 class RCCarApp extends StatelessWidget {
@@ -164,7 +170,8 @@ class _ControllerPageState extends State<ControllerPage> {
     final w = MediaQuery.of(context).size.width;
     final stickSize = w <= 700 ? 180.0 : 220.0;
     final knobSize = w <= 700 ? 72.0 : 88.0;
-    final gap = w <= 700 ? 28.0 : 48.0;
+  // gap was previously used by the Wrap layout; kept here for reference if needed
+  // final gap = w <= 700 ? 28.0 : 48.0;
 
     return Scaffold(
       body: SafeArea(
@@ -177,15 +184,15 @@ class _ControllerPageState extends State<ControllerPage> {
                     style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600)),
               ),
             ),
+            // Main control area: pin joysticks to left and right edges for better reach
             Expanded(
-              child: Center(
-                child: Wrap(
-                  spacing: gap,
-                  runSpacing: gap,
-                  alignment: WrapAlignment.center,
-                  children: [
-                    Joystick(
-                      size: stickSize,
+              child: Stack(
+                children: [
+                  // Left joystick (throttle) aligned to left edge and slightly above bottom
+                  Align(
+                    alignment: Alignment(-0.95, 0.6), // x near left edge, y near bottom
+                    child: _EdgeStickyJoystick(
+                      stickSize: stickSize,
                       knobSize: knobSize,
                       verticalOnly: true,
                       externalValue: Offset(0, -_thrFilt / maxVal),
@@ -194,8 +201,12 @@ class _ControllerPageState extends State<ControllerPage> {
                       },
                       onEnd: () => _throttle = 0,
                     ),
-                    Joystick(
-                      size: stickSize,
+                  ),
+                  // Right joystick (steer) aligned to right edge and slightly above bottom
+                  Align(
+                    alignment: Alignment(0.95, 0.6), // x near right edge, y near bottom
+                    child: _EdgeStickyJoystick(
+                      stickSize: stickSize,
                       knobSize: knobSize,
                       verticalOnly: false,
                       externalValue: Offset(_steerFilt / maxVal, 0),
@@ -204,8 +215,8 @@ class _ControllerPageState extends State<ControllerPage> {
                       },
                       onEnd: () => _steer = 0,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
             Padding(
@@ -233,6 +244,49 @@ class _ControllerPageState extends State<ControllerPage> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A wrapper that increases the hit area and limits the visible joystick size so
+/// the knob remains reachable when pinned to the screen edge.
+class _EdgeStickyJoystick extends StatelessWidget {
+  final double stickSize;
+  final double knobSize;
+  final bool verticalOnly;
+  final Offset externalValue;
+  final ValueChanged<Offset>? onChanged;
+  final VoidCallback? onEnd;
+
+  const _EdgeStickyJoystick({
+    required this.stickSize,
+    required this.knobSize,
+    required this.verticalOnly,
+    required this.externalValue,
+    this.onChanged,
+    this.onEnd,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Make a larger invisible hit area so the user can reach the stick closer to
+    // the screen edge. The visible circular joystick remains the same size.
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6.0),
+      child: SizedBox(
+        width: stickSize * 1.05,
+        height: stickSize * 1.05,
+        child: Center(
+          child: Joystick(
+            size: stickSize,
+            knobSize: knobSize,
+            verticalOnly: verticalOnly,
+            externalValue: externalValue,
+            onChanged: onChanged,
+            onEnd: onEnd,
+          ),
         ),
       ),
     );
