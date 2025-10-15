@@ -49,6 +49,7 @@ class _ControllerPageState extends State<ControllerPage> {
   static const int maxVal = 1000;
   double _throttle = 0; // Rohwerte -1000..+1000
   double _steer = 0;
+  // debug fields removed
 
   // Filter
   static const double dz = 0.08;
@@ -65,6 +66,7 @@ class _ControllerPageState extends State<ControllerPage> {
   // Loop (50 Hz)
   static const int sendHz = 50;
   Timer? _loop;
+  double _sensitivity = 0.8; // 0.4..1.2, lower = easier to reach max
 
   @override
   void initState() {
@@ -212,8 +214,8 @@ class _ControllerPageState extends State<ControllerPage> {
   @override
   Widget build(BuildContext context) {
     final w = MediaQuery.of(context).size.width;
-  final stickSize = w <= 700 ? 260.0 : 360.0; // bigger per request
-  final knobSize = w <= 700 ? 120.0 : 140.0;
+  final stickSize = w <= 700 ? 240.0 : 320.0; // slightly smaller
+  final knobSize = w <= 700 ? 100.0 : 120.0;
   // gap was previously used by the Wrap layout; kept here for reference if needed
   // final gap = w <= 700 ? 28.0 : 48.0;
 
@@ -228,34 +230,41 @@ class _ControllerPageState extends State<ControllerPage> {
                 children: [
                   // Left joystick (throttle) aligned to left edge and slightly above bottom
                   Align(
-                    alignment: Alignment(-0.95, 0.6), // x near left edge, y near bottom
+                    alignment: Alignment(-0.98, 0.6), // further out to the left
                     child: _EdgeStickyJoystick(
                       stickSize: stickSize,
                       knobSize: knobSize,
                       verticalOnly: true,
+                      sensitivity: _sensitivity,
                       // push UP => positive throttle, so don't invert here
                       externalValue: Offset(0, _thrFilt / maxVal),
                       onChanged: (o) {
                         // Ensure UP -> +maxVal
-                        _throttle = (o.dy).clamp(-1.0, 1.0) * maxVal;
+                        setState(() {
+                          _throttle = (o.dy).clamp(-1.0, 1.0) * maxVal;
+                        });
                       },
                       onEnd: () => _throttle = 0,
                     ),
                   ),
                   // Right joystick (steer) aligned to right edge and slightly above bottom
                   Align(
-                    alignment: Alignment(0.95, 0.6), // x near right edge, y near bottom
+                    alignment: Alignment(0.98, 0.6), // further out to the right
                     child: _EdgeStickyJoystick(
                       stickSize: stickSize,
                       knobSize: knobSize,
                       verticalOnly: false,
+                      sensitivity: _sensitivity,
                       externalValue: Offset(_steerFilt / maxVal, 0),
                       onChanged: (o) {
-                        _steer = (o.dx).clamp(-1.0, 1.0) * maxVal;
+                        setState(() {
+                          _steer = (o.dx).clamp(-1.0, 1.0) * maxVal;
+                        });
                       },
                       onEnd: () => _steer = 0,
                     ),
                   ),
+                  // debug overlay removed
                 ],
               ),
             ),
@@ -307,6 +316,27 @@ class _ControllerPageState extends State<ControllerPage> {
                         },
                         child: const Text('Ping'),
                       ),
+                      const SizedBox(width: 12),
+                      SizedBox(
+                        width: 180,
+                        child: Row(
+                          children: [
+                            const Text('Sens', style: TextStyle(color: Color(0xFF99AADD))),
+                            Expanded(
+                              child: Slider(
+                                value: _sensitivity,
+                                min: 0.4,
+                                max: 1.2,
+                                divisions: 8,
+                                label: _sensitivity.toStringAsFixed(2),
+                                onChanged: (v) {
+                                  setState(() => _sensitivity = v);
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                 ],
@@ -325,6 +355,8 @@ class _EdgeStickyJoystick extends StatelessWidget {
   final double stickSize;
   final double knobSize;
   final bool verticalOnly;
+  final double sensitivity;
+  
   final Offset externalValue;
   final ValueChanged<Offset>? onChanged;
   final VoidCallback? onEnd;
@@ -334,6 +366,7 @@ class _EdgeStickyJoystick extends StatelessWidget {
     required this.knobSize,
     required this.verticalOnly,
     required this.externalValue,
+    required this.sensitivity,
     this.onChanged,
     this.onEnd,
   });
@@ -353,6 +386,7 @@ class _EdgeStickyJoystick extends StatelessWidget {
             knobSize: knobSize,
             verticalOnly: verticalOnly,
             externalValue: externalValue,
+            sensitivity: sensitivity,
             onChanged: onChanged,
             onEnd: onEnd,
           ),
@@ -368,6 +402,7 @@ class Joystick extends StatefulWidget {
   final double knobSize;
   final bool verticalOnly;
   final Offset externalValue; // -1..+1 in beiden Achsen
+  final double sensitivity;
   final ValueChanged<Offset>? onChanged;
   final VoidCallback? onEnd;
 
@@ -377,6 +412,7 @@ class Joystick extends StatefulWidget {
     required this.knobSize,
     required this.verticalOnly,
     required this.externalValue,
+    this.sensitivity = 0.8,
     this.onChanged,
     this.onEnd,
   });
@@ -389,8 +425,19 @@ class _JoystickState extends State<Joystick> {
   Offset _local = Offset.zero; // -1..+1
   bool _isDragging = false;
 
+  // Sensitivity: lower => easier to reach max with less travel (0.0..1.0)
+  // 0.6 means only 60% of the physical radius is needed to reach normalized 1.0
+  double _sensitivity = 0.5;
+  Offset? _pointerOffset;
+
+  @override
+  void initState() {
+    super.initState();
+    _sensitivity = widget.sensitivity;
+  }
+
   double get _radius => widget.size / 2;
-  double get _travel => widget.size * 0.42; // increased travel to allow full range
+  double get _travel => widget.size * 0.42; // visual travel for knob
 
   @override
   void didUpdateWidget(covariant Joystick oldWidget) {
@@ -407,21 +454,20 @@ class _JoystickState extends State<Joystick> {
     final py = -knobOffset.dy * _travel;
 
     return GestureDetector(
-      onPanStart: (DragStartDetails details) {
+      onPanDown: (DragDownDetails details) {
         _isDragging = true;
-        // Center knob under the finger at drag start
-        final localPos = _positionFromRenderBox(details.localPosition, widget.size);
-        var norm = Offset(localPos.dx / _radius, -localPos.dy / _radius);
-        norm = widget.verticalOnly ? Offset(0, norm.dy) : Offset(norm.dx, 0);
-        final clamped = widget.verticalOnly
-            ? Offset(0, norm.dy.clamp(-1.0, 1.0))
-            : Offset(norm.dx.clamp(-1.0, 1.0), 0);
-        setState(() => _local = clamped);
-        widget.onChanged?.call(_local);
+        // compute pointer offset so the knob won't jump to finger
+        final p = details.localPosition;
+        final center = Offset(widget.size / 2, widget.size / 2);
+        final knobCenter = center + Offset(_local.dx * _travel, -_local.dy * _travel);
+        _pointerOffset = p - knobCenter;
       },
       onPanUpdate: (d) {
-        final localPos = _positionFromRenderBox(d.localPosition, widget.size);
-        var norm = Offset(localPos.dx / _radius, -localPos.dy / _radius);
+        final p = d.localPosition;
+        final desiredKnobCenter = p - (_pointerOffset ?? Offset.zero);
+        final center = Offset(widget.size / 2, widget.size / 2);
+        final v = desiredKnobCenter - center;
+        var norm = Offset(v.dx / (_radius * _sensitivity), -v.dy / (_radius * _sensitivity));
         norm = widget.verticalOnly ? Offset(0, norm.dy) : Offset(norm.dx, 0);
         final clamped = widget.verticalOnly
             ? Offset(0, norm.dy.clamp(-1.0, 1.0))
@@ -435,6 +481,7 @@ class _JoystickState extends State<Joystick> {
       },
       onPanEnd: (_) {
         _isDragging = false;
+        _pointerOffset = null;
         setState(() => _local = Offset.zero);
         widget.onEnd?.call();
       },
@@ -471,14 +518,6 @@ class _JoystickState extends State<Joystick> {
         ),
       ),
     );
-  }
-
-  Offset _positionFromRenderBox(Offset localPos, double size) {
-    final center = Offset(size / 2, size / 2);
-    final v = localPos - center;
-    final r = _radius;
-    if (v.distance <= r) return v;
-    return Offset.fromDirection(v.direction, r);
   }
 
   Offset _clampNorm(Offset o) =>
