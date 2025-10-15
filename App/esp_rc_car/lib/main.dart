@@ -21,7 +21,7 @@ class RCCarApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'RC Car Controller',
+      title: '',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark().copyWith(scaffoldBackgroundColor: Colors.black),
       home: const ControllerPage(),
@@ -37,9 +37,13 @@ class ControllerPage extends StatefulWidget {
 
 class _ControllerPageState extends State<ControllerPage> {
   // === WS ===
-  static const String wsUrl = 'ws://192.168.4.1:81/';
+  // Editable WebSocket URL to help debugging on different networks/devices
+  final TextEditingController _wsUrlController =
+      TextEditingController(text: 'ws://192.168.4.1:81/');
+  String get _wsUrl => _wsUrlController.text;
   WebSocket? _ws;
   Timer? _reconnectTimer;
+  String _wsInfo = '';
 
   // === Steuergrößen ===
   static const int maxVal = 1000;
@@ -76,16 +80,30 @@ class _ControllerPageState extends State<ControllerPage> {
     _gpSub?.cancel();
     _reconnectTimer?.cancel();
     _ws?.close();
+    _wsUrlController.dispose();
     super.dispose();
   }
 
   // === WebSocket verbinden / reconnect ===
   Future<void> _connectWS() async {
     try {
-  _ws = await WebSocket.connect(wsUrl);
-      _ws?.done.whenComplete(() => _scheduleReconnect());
+  debugPrint('[WS] connecting to $_wsUrl');
+  _ws = await WebSocket.connect(_wsUrl).timeout(const Duration(seconds: 5));
+      debugPrint('[WS] connected');
+      _wsInfo = 'verbunden';
+      _ws?.listen((data) {
+        debugPrint('[WS] recv: $data');
+      }, onError: (e) {
+        debugPrint('[WS] error: $e');
+      }, onDone: () {
+        debugPrint('[WS] done');
+        _scheduleReconnect();
+      });
+      _ws?.pingInterval = const Duration(seconds: 10);
       setState(() {});
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[WS] connect failed: $e');
+      _wsInfo = 'getrennt';
       _scheduleReconnect();
     }
   }
@@ -101,11 +119,34 @@ class _ControllerPageState extends State<ControllerPage> {
     final ws = _ws;
     if (ws != null) {
       try {
-        ws.add('${thr.round()},${st.round()},$flags');
+        final msg = '${thr.round()},${st.round()},$flags';
+        ws.add(msg);
+        debugPrint('[WS] send: $msg');
       } catch (_) {
         _scheduleReconnect();
       }
     }
+  }
+
+  // Simple HTTP GET to the WS host (helps verify network reachability)
+  Future<void> _pingHost() async {
+    try {
+      final uri = Uri.parse(_wsUrl);
+      final scheme = uri.scheme == 'ws' ? 'http' : (uri.scheme == 'wss' ? 'https' : uri.scheme);
+      final hostUri = Uri(scheme: scheme, host: uri.host, port: uri.hasPort ? uri.port : null, path: '/');
+      debugPrint('[PING] GET $hostUri');
+      final client = HttpClient();
+      client.connectionTimeout = const Duration(seconds: 3);
+      final req = await client.getUrl(hostUri).timeout(const Duration(seconds: 4));
+      final resp = await req.close().timeout(const Duration(seconds: 4));
+      debugPrint('[PING] status=${resp.statusCode}');
+      _wsInfo = 'ping ${resp.statusCode}';
+      client.close(force: true);
+    } catch (e) {
+      debugPrint('[PING] failed: $e');
+      _wsInfo = 'ping failed';
+    }
+    if (mounted) setState(() {});
   }
 
   // === Deadzone ===
@@ -131,11 +172,14 @@ class _ControllerPageState extends State<ControllerPage> {
         final r2 = ((event['r2'] as num?)?.toDouble() ?? 0.0).clamp(0.0, 1.0);
         final l2 = ((event['l2'] as num?)?.toDouble() ?? 0.0).clamp(0.0, 1.0);
 
-        final steerAxis = _applyDeadzone(lx);
-        final thrAxis = (r2 - l2).clamp(-1.0, 1.0);
+  final steerAxis = _applyDeadzone(lx);
+  final thrAxis = ((r2 - l2)).clamp(-1.0, 1.0);
 
-        _steer = steerAxis * maxVal;
-        _throttle = thrAxis * maxVal;
+  // Debug: ensure we see full trigger values
+  debugPrint('[GP] id=$id r2=$r2 l2=$l2 thrAxis=$thrAxis');
+
+  _steer = steerAxis * maxVal;
+  _throttle = thrAxis * maxVal;
 
         if (mounted) setState(() {});
       }
@@ -168,8 +212,8 @@ class _ControllerPageState extends State<ControllerPage> {
   @override
   Widget build(BuildContext context) {
     final w = MediaQuery.of(context).size.width;
-    final stickSize = w <= 700 ? 180.0 : 220.0;
-    final knobSize = w <= 700 ? 72.0 : 88.0;
+  final stickSize = w <= 700 ? 260.0 : 360.0; // bigger per request
+  final knobSize = w <= 700 ? 120.0 : 140.0;
   // gap was previously used by the Wrap layout; kept here for reference if needed
   // final gap = w <= 700 ? 28.0 : 48.0;
 
@@ -177,13 +221,7 @@ class _ControllerPageState extends State<ControllerPage> {
       body: SafeArea(
         child: Column(
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(12, 18, 12, 6),
-              child: Center(
-                child: Text('RC Car Controller',
-                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600)),
-              ),
-            ),
+            // header removed per user request
             // Main control area: pin joysticks to left and right edges for better reach
             Expanded(
               child: Stack(
@@ -195,9 +233,11 @@ class _ControllerPageState extends State<ControllerPage> {
                       stickSize: stickSize,
                       knobSize: knobSize,
                       verticalOnly: true,
-                      externalValue: Offset(0, -_thrFilt / maxVal),
+                      // push UP => positive throttle, so don't invert here
+                      externalValue: Offset(0, _thrFilt / maxVal),
                       onChanged: (o) {
-                        _throttle = (-o.dy).clamp(-1.0, 1.0) * maxVal;
+                        // Ensure UP -> +maxVal
+                        _throttle = (o.dy).clamp(-1.0, 1.0) * maxVal;
                       },
                       onEnd: () => _throttle = 0,
                     ),
@@ -223,22 +263,51 @@ class _ControllerPageState extends State<ControllerPage> {
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 18),
               child: Column(
                 children: [
-                  const Text(
-                    'Steuerung: Touch-Sticks\n'
-                    'Gamepad: linker Stick = Lenkung, R2 = vorwärts, L2 = rückwärts',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Color(0xFFA9B7C6), height: 1.45),
-                  ),
+                  const SizedBox.shrink(),
                   const SizedBox(height: 6),
                   Text(_gpLabel,
                       style:
                           const TextStyle(color: Color(0xFF99AADD), fontSize: 14)),
                   const SizedBox(height: 8),
                   Text(
-                    'WS: ${_ws == null ? "getrennt" : "verbunden"}'
+                    'WS: ${_ws == null ? _wsInfo == '' ? "getrennt" : _wsInfo : "verbunden"}'
                     ' | thr=${_thrFilt.toStringAsFixed(0)}  steer=${_steerFilt.toStringAsFixed(0)}',
                     style:
                         const TextStyle(color: Color(0xFF99AADD), fontSize: 12),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _wsUrlController,
+                          style: const TextStyle(color: Color(0xFF99AADD)),
+                          decoration: const InputDecoration(
+                            hintText: 'ws://192.168.4.1:81/',
+                            hintStyle: TextStyle(color: Color(0xFF6E7A8A)),
+                            isDense: true,
+                            contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: () {
+                          _reconnectTimer?.cancel();
+                          _ws?.close();
+                          _connectWS();
+                        },
+                        child: const Text('Connect'),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: () {
+                          _pingHost();
+                        },
+                        child: const Text('Ping'),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -321,7 +390,7 @@ class _JoystickState extends State<Joystick> {
   bool _isDragging = false;
 
   double get _radius => widget.size / 2;
-  double get _travel => widget.size * 0.36; // wie im Web (0.36*size)
+  double get _travel => widget.size * 0.42; // increased travel to allow full range
 
   @override
   void didUpdateWidget(covariant Joystick oldWidget) {
@@ -338,7 +407,18 @@ class _JoystickState extends State<Joystick> {
     final py = -knobOffset.dy * _travel;
 
     return GestureDetector(
-      onPanStart: (_) => _isDragging = true,
+      onPanStart: (DragStartDetails details) {
+        _isDragging = true;
+        // Center knob under the finger at drag start
+        final localPos = _positionFromRenderBox(details.localPosition, widget.size);
+        var norm = Offset(localPos.dx / _radius, -localPos.dy / _radius);
+        norm = widget.verticalOnly ? Offset(0, norm.dy) : Offset(norm.dx, 0);
+        final clamped = widget.verticalOnly
+            ? Offset(0, norm.dy.clamp(-1.0, 1.0))
+            : Offset(norm.dx.clamp(-1.0, 1.0), 0);
+        setState(() => _local = clamped);
+        widget.onChanged?.call(_local);
+      },
       onPanUpdate: (d) {
         final localPos = _positionFromRenderBox(d.localPosition, widget.size);
         var norm = Offset(localPos.dx / _radius, -localPos.dy / _radius);
@@ -349,6 +429,9 @@ class _JoystickState extends State<Joystick> {
 
         setState(() => _local = clamped);
         widget.onChanged?.call(_local);
+        // Debug raw joystick values
+        // Note: this prints a lot when dragging; useful for diagnosing range issues
+        debugPrint('[JS] knob dx=${_local.dx.toStringAsFixed(3)} dy=${_local.dy.toStringAsFixed(3)}');
       },
       onPanEnd: (_) {
         _isDragging = false;

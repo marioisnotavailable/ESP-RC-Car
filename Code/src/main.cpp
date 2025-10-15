@@ -6,8 +6,8 @@
 #include "driver/gpio.h"
 
 // ----------------- WLAN / AP -----------------
-#define WIFI_SSID "RC_Car"
-#define WIFI_PASS "12345678"
+#define WIFI_SSID "hauniweb_intern"
+#define WIFI_PASS "F@ustb0ll"
 const uint8_t WIFI_CH = 6;
 
 // ----------------- Pins / LED ----------------
@@ -216,11 +216,17 @@ void setup(){
   // WLAN AP
   WiFi.persistent(false);
   WiFi.setSleep(false);
-  WiFi.mode(WIFI_AP);
+  WiFi.mode(WIFI_STA);
   WiFi.setTxPower(WIFI_POWER_19_5dBm);
-  WiFi.softAP(WIFI_SSID, WIFI_PASS, WIFI_CH);
+  WiFi.begin(WIFI_SSID, WIFI_PASS, WIFI_CH);
 
-  IPAddress ip = WiFi.softAPIP();
+  Serial.print("Connecting to WiFi ..");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  IPAddress ip = WiFi.localIP();
   Serial.print("AP up. SSID="); Serial.print(WIFI_SSID);
   Serial.print("  IP="); Serial.println(ip); // -> http://192.168.4.1/
 
