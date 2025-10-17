@@ -6,8 +6,8 @@
 #include "driver/gpio.h"
 
 // ----------------- WLAN / AP -----------------
-#define WIFI_SSID "hauniweb_intern"
-#define WIFI_PASS "F@ustb0ll"
+#define WIFI_SSID "HTL-WLAN-IoT"
+#define WIFI_PASS "HTL2IoT!"
 const uint8_t WIFI_CH = 6;
 
 // ----------------- Pins / LED ----------------
