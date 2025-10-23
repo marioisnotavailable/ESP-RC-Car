@@ -311,7 +311,7 @@ class _ControllerPageState extends State<ControllerPage> {
           }
           
           // Alle Debug-Werte in einer einzigen Zeile ausgeben
-          debugPrint('📊 CONTROLLER: id=$id lx=$lx r2=$r2 l2=$l2 thr=${thrAxis} finalValue=${thrAxis*maxVal}');
+          debugPrint('📊 CONTROLLER: id=$id lx=$lx r2=$r2 l2=$l2 thr=$thrAxis finalValue=${thrAxis*maxVal}');
 
           _steer = steerAxis * maxVal;
           _throttle = thrAxis * maxVal;
@@ -362,6 +362,7 @@ class _ControllerPageState extends State<ControllerPage> {
       body: SafeArea(
         child: Column(
           children: [
+            // Hinweis: URL/Dev-Panel bleibt ganz oben; Gamepad-Panel wird im Control-Stack positioniert
             // Dev panel toggle (collapses the websocket/dev controls)
             Padding(
               padding: const EdgeInsets.fromLTRB(8, 8, 8, 6),
@@ -513,13 +514,13 @@ class _ControllerPageState extends State<ControllerPage> {
                       ),
                     ),
                   ),
-                  
-                  // Gamepad-Status-Anzeige (immer sichtbar wenn Gamepad verbunden)
+                  // Gamepad-Status-Anzeige: oben rechts im Control-Bereich, damit Dev-Infos sichtbar bleiben
                   if (_gamepadConnected)
                     Align(
-                      alignment: const Alignment(0, -0.3),
+                      alignment: const Alignment(0.92, -0.92),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        constraints: const BoxConstraints(maxWidth: 280),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
                           color: const Color(0x90000000),
                           borderRadius: BorderRadius.circular(12),
@@ -527,36 +528,35 @@ class _ControllerPageState extends State<ControllerPage> {
                         ),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
                             Text(
                               '🎮 GAMEPAD AKTIV',
                               style: const TextStyle(
                                 color: Color(0xFF00FF00),
-                                fontSize: 16,
+                                fontSize: 14,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
-                            const SizedBox(height: 4),
-                            Text(
+                            const SizedBox(height: 2),
+                            const Text(
                               'Linker Stick: Lenkung\nL2/R2 Trigger: Gas/Bremse',
                               textAlign: TextAlign.center,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: Color(0xFF99AADD),
-                                fontSize: 12,
+                                fontSize: 11,
                               ),
                             ),
-                            // Debug-Anzeige für einfachere Fehlerdiagnose
+                            const SizedBox(height: 2),
                             Builder(
                               builder: (context) {
-                                // Triggerwerte im UI-Update abrufen
                                 final r2Value = (_throttle > 0) ? (_throttle / maxVal * 100).toInt() : 0;
                                 final l2Value = (_throttle < 0) ? (-_throttle / maxVal * 100).toInt() : 0;
-                                
-                                // Farbcodierung - rot wenn negativ (bremsen), grün wenn positiv (gas)
-                                final gasColor = _throttle > 50 ? const Color(0xFF00FF00) : 
-                                                _throttle < -50 ? const Color(0xFFFF4444) :
-                                                const Color(0xFFBBCCDD);
-                                
+                                final gasColor = _throttle > 50
+                                    ? const Color(0xFF00FF00)
+                                    : _throttle < -50
+                                        ? const Color(0xFFFF4444)
+                                        : const Color(0xFFBBCCDD);
                                 return Column(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [

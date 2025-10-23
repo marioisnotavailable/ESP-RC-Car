@@ -1,5 +1,7 @@
 package com.example.esp_rc_car
 
+import android.content.Context
+import android.hardware.input.InputManager
 import android.os.Bundle
 import android.view.InputDevice
 import android.view.KeyEvent
@@ -9,9 +11,10 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 
-class MainActivity : FlutterActivity() {
+class MainActivity : FlutterActivity(), InputManager.InputDeviceListener {
     private val CHANNEL = "rc.gamepad/events"
     private var eventSink: EventChannel.EventSink? = null
+    private var inputManager: InputManager? = null
 
     // State
     private var connected = false
@@ -26,7 +29,8 @@ class MainActivity : FlutterActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // nothing else
+        // Register input manager for device add/remove events
+        inputManager = getSystemService(Context.INPUT_SERVICE) as? InputManager
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -44,7 +48,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun push() {
-        val map = hashMapOf(
+        val payload = hashMapOf(
             "connected" to connected,
             "id" to gamepadId,
             "lx" to lx,
@@ -53,7 +57,14 @@ class MainActivity : FlutterActivity() {
             "ry" to ry,  // Nur für Debug, wird in Dart nicht verwendet!
             "isRightStickActive" to (ry != 0.0)  // Flag für Debug
         )
-        eventSink?.success(map)
+        // Ensure events are sent on the UI thread to avoid crashes when device changes happen on background threads
+        runOnUiThread {
+            try {
+                eventSink?.success(payload)
+            } catch (_: Throwable) {
+                // Ignore; stream may not be listening
+            }
+        }
     }
 
     private fun isGamepad(devId: Int): Boolean {
@@ -62,6 +73,15 @@ class MainActivity : FlutterActivity() {
         val isJs = (sources and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
         val isGp = (sources and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD
         return isJs || isGp
+    }
+
+    private fun anyGamepadConnected(): Boolean {
+        return try {
+            val ids = InputDevice.getDeviceIds()
+            ids.any { id -> isGamepad(id) }
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     private fun normalizeAxis(value: Float, min: Float = -1f, max: Float = 1f): Double {
@@ -208,5 +228,63 @@ class MainActivity : FlutterActivity() {
             }
         }
         return super.onKeyUp(keyCode, event)
+    }
+
+    override fun onResume() {
+        super.onResume()
+    try { inputManager?.registerInputDeviceListener(this, null) } catch (_: Throwable) {}
+        // Push current connection status on resume (in case of changes while paused)
+        connected = anyGamepadConnected()
+        if (!connected) {
+            gamepadId = ""
+            lx = 0.0; l2 = 0.0; r2 = 0.0
+        } else {
+            // pick a name from the first gamepad device
+            val ids = InputDevice.getDeviceIds()
+            val found = ids.firstOrNull { isGamepad(it) }
+            gamepadId = found?.let { InputDevice.getDevice(it)?.name } ?: "Gamepad"
+        }
+        push()
+    }
+
+    override fun onPause() {
+        super.onPause()
+    try { inputManager?.unregisterInputDeviceListener(this) } catch (_: Throwable) {}
+    }
+
+    // InputDeviceListener callbacks
+    override fun onInputDeviceAdded(deviceId: Int) {
+        if (isGamepad(deviceId)) {
+            connected = true
+            gamepadId = InputDevice.getDevice(deviceId)?.name ?: "Gamepad"
+            // reset axes to neutral and notify
+            lx = 0.0; l2 = 0.0; r2 = 0.0
+            push()
+        }
+    }
+
+    override fun onInputDeviceRemoved(deviceId: Int) {
+        if (!anyGamepadConnected()) {
+            // No gamepads remain; switch back to touch immediately
+            connected = false
+            gamepadId = ""
+            lx = 0.0; l2 = 0.0; r2 = 0.0
+            push()
+        }
+    }
+
+    override fun onInputDeviceChanged(deviceId: Int) {
+        // Device capabilities changed; recompute status
+        val hasGp = anyGamepadConnected()
+        connected = hasGp
+        if (hasGp) {
+            val ids = InputDevice.getDeviceIds()
+            val found = ids.firstOrNull { isGamepad(it) }
+            gamepadId = found?.let { InputDevice.getDevice(it)?.name } ?: "Gamepad"
+        } else {
+            gamepadId = ""
+            lx = 0.0; l2 = 0.0; r2 = 0.0
+        }
+        push()
     }
 }
