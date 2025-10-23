@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io'; // WebSocket (mobile/desktop)
+// removed unused import 'dart:math'
 // removed unused import
 
 import 'package:flutter/material.dart';
@@ -43,6 +44,11 @@ class _ControllerPageState extends State<ControllerPage> {
   String get _wsUrl => _wsUrlController.text;
   WebSocket? _ws;
   Timer? _reconnectTimer;
+  
+  // === Gamepad Kalibrierung ===
+  // Speichert die maximal beobachteten Werte für die Kalibrierung
+  double _maxObservedR2 = 0.1; // Startwert um Division durch 0 zu vermeiden
+  double _maxObservedL2 = 0.1; // Startwert um Division durch 0 zu vermeiden
 
   // === Steuergrößen ===
   static const int maxVal = 1000;
@@ -247,33 +253,78 @@ class _ControllerPageState extends State<ControllerPage> {
     return v.isNegative ? -s : s;
   }
 
+  // Gamepad-Verbindung Status
+  bool _gamepadConnected = false;
+
   // === Gamepad: Android-Stream lesen ===
   void _subscribeGamepad() {
     _gpSub = _gamepadChannel.receiveBroadcastStream().listen((event) {
       // event: { "lx": double, "r2": double, "l2": double, "connected": bool, "id": "..." }
       if (event is Map) {
         final connected = (event['connected'] as bool?) ?? false;
-  // connected state is shown via _gpLabel; no separate flag needed
+        _gamepadConnected = connected;
         final id = (event['id'] as String?) ?? '';
         _gpLabel = connected ? 'Gamepad: verbunden ($id)' : 'Gamepad: nicht verbunden';
 
-        // lx: -1..+1 / r2,l2: 0..1
-        final lx = (event['lx'] as num?)?.toDouble() ?? 0.0;
-        final r2 = ((event['r2'] as num?)?.toDouble() ?? 0.0).clamp(0.0, 1.0);
-        final l2 = ((event['l2'] as num?)?.toDouble() ?? 0.0).clamp(0.0, 1.0);
+        if (connected) {
+          // NUR linken Stick für Lenkung verwenden, rechten Stick ignorieren
+          // lx: -1..+1 / r2,l2: 0..1
+          final lx = (event['lx'] as num?)?.toDouble() ?? 0.0;
+          
+          // Raw trigger values
+          var r2Raw = ((event['r2'] as num?)?.toDouble() ?? 0.0).clamp(0.0, 1.0);
+          var l2Raw = ((event['l2'] as num?)?.toDouble() ?? 0.0).clamp(0.0, 1.0);
+          
+          // === Automatische Kalibrierung ===
+          // Update die maximalen beobachteten Werte für die Kalibrierung
+          if (r2Raw > _maxObservedR2 && r2Raw > 0.05) {
+            _maxObservedR2 = r2Raw;
+          }
+          
+          if (l2Raw > _maxObservedL2 && l2Raw > 0.05) {
+            _maxObservedL2 = l2Raw;
+          }
+          
+          // DEBUG: Prüfen ob rechter Stick aktiv ist - NUR FÜR DEBUG!
+          final isRightStickActive = (event['isRightStickActive'] as bool?) ?? false;
+          final ry = (event['ry'] as num?)?.toDouble() ?? 0.0;
+          if (isRightStickActive) {
+            debugPrint('⚠️ WARNUNG: Rechter Stick ist aktiv! ry=$ry');
+          }
+          
+          // *** ABSOLUT STRIKTE KONTROLLE DER EINGABEN ***
+          
+          // 1. NUR die Trigger L2/R2 für Gas/Bremse verwenden
+          final r2 = r2Raw;
+          final l2 = l2Raw;
 
-  final steerAxis = _applyDeadzone(lx);
-  final thrAxis = ((r2 - l2)).clamp(-1.0, 1.0);
+          // 2. Steuern (links/rechts) - NUR linker Stick
+          final steerAxis = _applyDeadzone(lx);
+          
+          // 3. KRITISCH: Gas/Bremse AUSSCHLIESSLICH über L2/R2 Trigger
+          //    Absolut keine anderen Eingabequellen berücksichtigen
+          final thrAxis = (r2 - l2).clamp(-1.0, 1.0);
+          
+          // 4. WICHTIG: Das rechte Stick-Flag für Debug erkennen, aber NICHT verwenden
+          if (isRightStickActive && ry > 0.1) {
+            debugPrint('⚠️⚠️⚠️ WARNUNG: Rechter Stick ist aktiv ($ry), wird aber ignoriert');
+          }
+          
+          // Alle Debug-Werte in einer einzigen Zeile ausgeben
+          debugPrint('📊 CONTROLLER: id=$id lx=$lx r2=$r2 l2=$l2 thr=${thrAxis} finalValue=${thrAxis*maxVal}');
 
-  // Debug: ensure we see full trigger values
-  debugPrint('[GP] id=$id r2=$r2 l2=$l2 thrAxis=$thrAxis');
-
-  _steer = steerAxis * maxVal;
-  _throttle = thrAxis * maxVal;
+          _steer = steerAxis * maxVal;
+          _throttle = thrAxis * maxVal;
+        } else {
+          // Gamepad getrennt - Werte zurücksetzen
+          _steer = 0;
+          _throttle = 0;
+        }
 
         if (mounted) setState(() {});
       }
     }, onError: (_) {
+      _gamepadConnected = false;
       _gpLabel = 'Gamepad: nicht verbunden';
       if (mounted) setState(() {});
     });
@@ -384,42 +435,53 @@ class _ControllerPageState extends State<ControllerPage> {
             Expanded(
               child: Stack(
                 children: [
-                  // Left joystick (throttle) aligned to left edge and slightly above bottom
-                  Align(
-                    alignment: Alignment(-0.98, 0.6), // further out to the left
-                    child: _EdgeStickyJoystick(
-                      stickSize: stickSize,
-                      knobSize: knobSize,
-                      verticalOnly: true,
-                      sensitivity: _sensitivity,
-                      // push UP => positive throttle, so don't invert here
-                      externalValue: Offset(0, _thrFilt / maxVal),
-                      onChanged: (o) {
-                        // Ensure UP -> +maxVal
-                        setState(() {
-                          _throttle = (o.dy).clamp(-1.0, 1.0) * maxVal;
-                        });
-                      },
-                      onEnd: () => _throttle = 0,
+                  // Left joystick (throttle) - nur sichtbar wenn kein Gamepad verbunden
+                  if (!_gamepadConnected)
+                    Align(
+                      alignment: Alignment(-0.98, 0.6), // further out to the left
+                      child: _EdgeStickyJoystick(
+                        stickSize: stickSize,
+                        knobSize: knobSize,
+                        verticalOnly: true,
+                        sensitivity: _sensitivity,
+                        // push UP => positive throttle, so don't invert here
+                        externalValue: Offset(0, _thrFilt / maxVal),
+                        onChanged: (o) {
+                          // Nur verwenden wenn kein Gamepad verbunden
+                          if (!_gamepadConnected) {
+                            setState(() {
+                              _throttle = (o.dy).clamp(-1.0, 1.0) * maxVal;
+                            });
+                          }
+                        },
+                        onEnd: () {
+                          if (!_gamepadConnected) _throttle = 0;
+                        },
+                      ),
                     ),
-                  ),
-                  // Right joystick (steer) aligned to right edge and slightly above bottom
-                  Align(
-                    alignment: Alignment(0.98, 0.6), // further out to the right
-                    child: _EdgeStickyJoystick(
-                      stickSize: stickSize,
-                      knobSize: knobSize,
-                      verticalOnly: false,
-                      sensitivity: _sensitivity,
-                      externalValue: Offset(_steerFilt / maxVal, 0),
-                      onChanged: (o) {
-                        setState(() {
-                          _steer = (o.dx).clamp(-1.0, 1.0) * maxVal;
-                        });
-                      },
-                      onEnd: () => _steer = 0,
+                  // Right joystick (steer) - nur sichtbar wenn kein Gamepad verbunden
+                  if (!_gamepadConnected)
+                    Align(
+                      alignment: Alignment(0.98, 0.6), // further out to the right
+                      child: _EdgeStickyJoystick(
+                        stickSize: stickSize,
+                        knobSize: knobSize,
+                        verticalOnly: false,
+                        sensitivity: _sensitivity,
+                        externalValue: Offset(_steerFilt / maxVal, 0),
+                        onChanged: (o) {
+                          // Nur verwenden wenn kein Gamepad verbunden
+                          if (!_gamepadConnected) {
+                            setState(() {
+                              _steer = (o.dx).clamp(-1.0, 1.0) * maxVal;
+                            });
+                          }
+                        },
+                        onEnd: () {
+                          if (!_gamepadConnected) _steer = 0;
+                        },
+                      ),
                     ),
-                  ),
                   // debug overlay removed
                   // Center status between joysticks when dev panel is collapsed
                   Align(
@@ -451,6 +513,79 @@ class _ControllerPageState extends State<ControllerPage> {
                       ),
                     ),
                   ),
+                  
+                  // Gamepad-Status-Anzeige (immer sichtbar wenn Gamepad verbunden)
+                  if (_gamepadConnected)
+                    Align(
+                      alignment: const Alignment(0, -0.3),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: const Color(0x90000000),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFF00FF00), width: 2),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '🎮 GAMEPAD AKTIV',
+                              style: const TextStyle(
+                                color: Color(0xFF00FF00),
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Linker Stick: Lenkung\nL2/R2 Trigger: Gas/Bremse',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Color(0xFF99AADD),
+                                fontSize: 12,
+                              ),
+                            ),
+                            // Debug-Anzeige für einfachere Fehlerdiagnose
+                            Builder(
+                              builder: (context) {
+                                // Triggerwerte im UI-Update abrufen
+                                final r2Value = (_throttle > 0) ? (_throttle / maxVal * 100).toInt() : 0;
+                                final l2Value = (_throttle < 0) ? (-_throttle / maxVal * 100).toInt() : 0;
+                                
+                                // Farbcodierung - rot wenn negativ (bremsen), grün wenn positiv (gas)
+                                final gasColor = _throttle > 50 ? const Color(0xFF00FF00) : 
+                                                _throttle < -50 ? const Color(0xFFFF4444) :
+                                                const Color(0xFFBBCCDD);
+                                
+                                return Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      'L2: $l2Value% | R2: $r2Value%',
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        color: Color(0xFFBBCCDD),
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Gas: ${_throttle.toInt()}',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: gasColor,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
