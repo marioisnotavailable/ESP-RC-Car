@@ -41,7 +41,6 @@ const uint16_t BLINK_MIN_MS = 50;
 const uint16_t BLINK_MAX_MS = 800;
 
 // ----------------- Webserver / WS ------------
-WebServer http(80);
 WebSocketsServer ws(81);
 
 // ----------------- Steuerdaten ----------------
@@ -237,37 +236,6 @@ void setup(){
     listFS();
   }
 
-  // Root -> controlle.html
-  http.on("/", []() {
-    if (!LittleFS.exists("/controlle.html")) {
-      http.send(500, "text/plain", "controlle.html missing in LittleFS");
-      return;
-    }
-    File f = LittleFS.open("/controlle.html", "r");
-    http.streamFile(f, "text/html");
-    f.close();
-  });
-
-  // Static Files
-  http.onNotFound([](){
-    String path = http.uri();
-    File f = LittleFS.open(path, "r");
-    if (!f) {
-      http.send(404, "text/plain", "Not found");
-      return;
-    }
-    String ct = "text/plain";
-    if (path.endsWith(".html")) ct = "text/html";
-    else if (path.endsWith(".css")) ct = "text/css";
-    else if (path.endsWith(".js")) ct = "application/javascript";
-    else if (path.endsWith(".png")) ct = "image/png";
-    else if (path.endsWith(".jpg") || path.endsWith(".jpeg")) ct = "image/jpeg";
-    http.streamFile(f, ct);
-    f.close();
-  });
-
-  http.begin();
-
   // WebSocket
   ws.begin();
   ws.onEvent(onWs);
@@ -289,7 +257,6 @@ void setup(){
 
 // ----------------- Loop -----------------------
 void loop(){
-  http.handleClient();
   ws.loop();
 
   // Failsafe: ohne Daten → Mitte
