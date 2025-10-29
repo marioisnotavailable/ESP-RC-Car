@@ -12,7 +12,7 @@ using flutter::EncodableMap;
 using flutter::EncodableValue;
 
 std::unique_ptr<flutter::EventChannel<flutter::EncodableValue>> GamepadChannel::channel_;
-std::unique_ptr<flutter::StreamHandlerFunctions<flutter::EncodableValue>> GamepadChannel::handler_;
+std::unique_ptr<flutter::StreamHandler<flutter::EncodableValue>> GamepadChannel::handler_;
 std::atomic<bool> GamepadChannel::streaming_{false};
 std::thread GamepadChannel::poller_;
 
@@ -64,51 +64,51 @@ void GamepadChannel::Register(flutter::BinaryMessenger* messenger) {
   channel_ = std::make_unique<flutter::EventChannel<EncodableValue>>(
       messenger, "rc.gamepad/events", &flutter::StandardMethodCodec::GetInstance());
 
-  handler_ = std::make_unique<flutter::StreamHandlerFunctions<EncodableValue>>(
-      flutter::StreamHandlerFunctions<EncodableValue>{
-          // onListen
-          .on_listen = [](const EncodableValue* /*args*/, std::unique_ptr<flutter::EventSink<EncodableValue>>&& sink)
-              -> std::unique_ptr<flutter::StreamHandlerError<EncodableValue>> {
-            streaming_.store(true);
-            // Start poller thread at ~50 Hz
-            poller_ = std::thread([sink_ptr = std::move(sink)]() mutable {
-              State last{};
-              auto sink = std::move(sink_ptr);
-              while (streaming_.load()) {
-                State cur = ReadXInput();
-                // Build map
-                EncodableMap map;
-                map[EncodableValue("connected")] = EncodableValue(cur.connected);
-                map[EncodableValue("id")] = EncodableValue(cur.id);
-                map[EncodableValue("lx")] = EncodableValue(cur.lx);
-                // Strict: only triggers control throttle
-                map[EncodableValue("r2")] = EncodableValue(cur.r2);
-                map[EncodableValue("l2")] = EncodableValue(cur.l2);
-                // Provide right-stick magnitude (max of X/Y) for parity with Android debug info
-                const double rightMag = std::max(cur.ry_abs, cur.rx_abs);
-                map[EncodableValue("ry")] = EncodableValue(rightMag);
-                map[EncodableValue("isRightStickActive")] = EncodableValue(rightMag > 0.1);
+  // Create a StreamHandler subclass to manage listen/cancel for the event channel.
+  struct PollingHandler : public flutter::StreamHandler<EncodableValue> {
+    PollingHandler() = default;
+    ~PollingHandler() override = default;
 
-                try {
-                  sink->Success(EncodableValue(map));
-                } catch (...) {
-                  // Ignore send errors
-                }
+  std::unique_ptr<flutter::StreamHandlerError<EncodableValue>> OnListenInternal(
+        const EncodableValue* /*arguments*/,
+        std::unique_ptr<flutter::EventSink<EncodableValue>>&& events) override {
+      // Start poller thread at ~50 Hz
+      streaming_.store(true);
+      poller_ = std::thread([sink_ptr = std::move(events)]() mutable {
+        auto sink = std::move(sink_ptr);
+        while (streaming_.load()) {
+          State cur = ReadXInput();
+          // Build map
+          EncodableMap map;
+          map[EncodableValue("connected")] = EncodableValue(cur.connected);
+          map[EncodableValue("id")] = EncodableValue(cur.id);
+          map[EncodableValue("lx")] = EncodableValue(cur.lx);
+          map[EncodableValue("r2")] = EncodableValue(cur.r2);
+          map[EncodableValue("l2")] = EncodableValue(cur.l2);
+          const double rightMag = std::max(cur.ry_abs, cur.rx_abs);
+          map[EncodableValue("ry")] = EncodableValue(rightMag);
+          map[EncodableValue("isRightStickActive")] = EncodableValue(rightMag > 0.1);
 
-                std::this_thread::sleep_for(std::chrono::milliseconds(20));
-              }
-            });
-            return nullptr;
-          },
-          // onCancel
-          .on_cancel = [](const EncodableValue* /*args*/)
-              -> std::unique_ptr<flutter::StreamHandlerError<EncodableValue>> {
-            streaming_.store(false);
-            if (poller_.joinable()) poller_.join();
-            return nullptr;
-          },
+          try {
+            sink->Success(EncodableValue(map));
+          } catch (...) {
+            // Ignore send errors
+          }
+          std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
       });
+      return nullptr;
+    }
 
+  std::unique_ptr<flutter::StreamHandlerError<EncodableValue>> OnCancelInternal(
+        const EncodableValue* /*arguments*/) override {
+      streaming_.store(false);
+      if (poller_.joinable()) poller_.join();
+      return nullptr;
+    }
+  };
+
+  handler_ = std::make_unique<PollingHandler>();
   channel_->SetStreamHandler(std::move(handler_));
 }
 
