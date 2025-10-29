@@ -2,6 +2,7 @@
 #include <WiFi.h>
 #include <WiFiMulti.h>
 #include <WebServer.h>
+#include <DNSServer.h>
 #include <WebSocketsServer.h>
 #include <LittleFS.h>
 #include <Preferences.h>
@@ -45,6 +46,7 @@ WebSocketsServer ws(81);
 WebServer http(80);
 WiFiMulti wifiMulti;
 Preferences prefs;
+DNSServer dnsServer; // for captive portal DNS redirect
 
 // ----------------- Multi-Reset Detector (3x, NVS) -------
 // Detect three quick resets within a short window to open the Wi-Fi config portal
@@ -173,10 +175,21 @@ void startAPPortal() {
   // Pre-scan once at startup (before clients are connected) to avoid on-demand scan disconnects
   runWiFiScan();
 
+  // Start DNS captive portal: resolve all hostnames to the AP IP
+  dnsServer.start(53, "*", ip);
+
   // Static files
   http.on("/", HTTP_GET, [](){ if (!serveFile("/index.html")) http.send(404, "text/plain", "index.html not found"); });
   http.on("/app.js", HTTP_GET, [](){ if (!serveFile("/app.js")) http.send(404, "text/plain", "app.js not found"); });
   http.on("/styles.css", HTTP_GET, [](){ if (!serveFile("/styles.css")) http.send(404, "text/plain", "styles.css not found"); });
+
+  // Captive portal probes from various OS: respond with 200 to trigger portal
+  http.on("/generate_204", HTTP_GET, [](){ http.send(200, "text/plain", "OK"); }); // Android
+  http.on("/hotspot-detect.html", HTTP_GET, [](){ http.send(200, "text/html", "<html><head><title>Success</title></head><body>OK</body></html>"); }); // iOS/macOS
+  http.on("/success.txt", HTTP_GET, [](){ http.send(200, "text/plain", "Success"); });
+  http.on("/ncsi.txt", HTTP_GET, [](){ http.send(200, "text/plain", "Microsoft NCSI"); }); // Windows
+  http.on("/connecttest.txt", HTTP_GET, [](){ http.send(200, "text/plain", "OK"); });
+  http.on("/fwlink", HTTP_GET, [](){ http.sendHeader("Location", "/"); http.send(302, "text/plain", ""); });
 
   // JSON API
   http.on("/api/saved", HTTP_GET, [](){
@@ -219,6 +232,12 @@ void startAPPortal() {
     http.send(200, "application/json", "{\"ok\":true}");
     delay(200);
     ESP.restart();
+  });
+
+  // Default: redirect any unknown path to the root to help with captive portal
+  http.onNotFound([](){
+    http.sendHeader("Location", String("http://") + WiFi.softAPIP().toString() + "/");
+    http.send(302, "text/plain", "");
   });
   http.begin();
 }
@@ -475,6 +494,8 @@ void loop(){
   }
 
   if (startConfigPortal) {
+    // service DNS for captive portal
+    dnsServer.processNextRequest();
     http.handleClient();
   }
 
