@@ -26,6 +26,8 @@ struct State {
   double l2{0};
   double r2{0};
   double ry_abs{0};
+  double rx_abs{0};
+  std::string id{""};
 };
 
 State ReadXInput() {
@@ -41,11 +43,15 @@ State ReadXInput() {
       const double normLX = (g.sThumbLX >= 0 ? (g.sThumbLX / 32767.0) : (g.sThumbLX / 32768.0));
       s.lx = clamp(normLX, -1.0, 1.0);
       // Triggers 0..255 -> 0..1
-      s.l2 = clamp(g.bLeftTrigger / 255.0, 0.0, 1.0);
-      s.r2 = clamp(g.bRightTrigger / 255.0, 0.0, 1.0);
+      // Amplify triggers slightly to match Android behavior (some controllers report low values)
+      s.l2 = clamp((g.bLeftTrigger / 255.0) * 4.0, 0.0, 1.0);
+      s.r2 = clamp((g.bRightTrigger / 255.0) * 4.0, 0.0, 1.0);
       // Right stick activity (abs of Y)
       const double normRY = (g.sThumbRY >= 0 ? (g.sThumbRY / 32767.0) : (g.sThumbRY / 32768.0));
+      const double normRX = (g.sThumbRX >= 0 ? (g.sThumbRX / 32767.0) : (g.sThumbRX / 32768.0));
       s.ry_abs = std::abs(normRY);
+      s.rx_abs = std::abs(normRX);
+      s.id = std::string("XInput") + std::to_string(i);
       break;
     }
   }
@@ -73,13 +79,15 @@ void GamepadChannel::Register(flutter::BinaryMessenger* messenger) {
                 // Build map
                 EncodableMap map;
                 map[EncodableValue("connected")] = EncodableValue(cur.connected);
-                map[EncodableValue("id")] = EncodableValue("XInput");
+                map[EncodableValue("id")] = EncodableValue(cur.id);
                 map[EncodableValue("lx")] = EncodableValue(cur.lx);
                 // Strict: only triggers control throttle
                 map[EncodableValue("r2")] = EncodableValue(cur.r2);
                 map[EncodableValue("l2")] = EncodableValue(cur.l2);
-                map[EncodableValue("ry")] = EncodableValue(cur.ry_abs);
-                map[EncodableValue("isRightStickActive")] = EncodableValue(cur.ry_abs > 0.1);
+                // Provide right-stick magnitude (max of X/Y) for parity with Android debug info
+                const double rightMag = std::max(cur.ry_abs, cur.rx_abs);
+                map[EncodableValue("ry")] = EncodableValue(rightMag);
+                map[EncodableValue("isRightStickActive")] = EncodableValue(rightMag > 0.1);
 
                 try {
                   sink->Success(EncodableValue(map));
