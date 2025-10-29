@@ -14,7 +14,7 @@ class GamepadChannel {
 
  private:
   static std::unique_ptr<flutter::EventChannel<flutter::EncodableValue>> channel_;
-  static std::unique_ptr<flutter::StreamHandlerFunctions<flutter::EncodableValue>> handler_;
+  static std::unique_ptr<flutter::StreamHandler<flutter::EncodableValue>> handler_;
   static std::atomic<bool> streaming_;
   static std::thread poller_;
 };
