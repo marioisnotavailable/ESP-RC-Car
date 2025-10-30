@@ -78,12 +78,13 @@ class IOSGamepadStreamHandler: NSObject, FlutterStreamHandler {
     var rx = 0.0
     var ry = 0.0
     if let gp = ctrl?.extendedGamepad {
-      lx = Double(gp.leftThumbstick.x)
+      // GCControllerDirectionPad doesn't expose `x`/`y` directly; use xAxis/yAxis.value
+      lx = Double(gp.leftThumbstick.xAxis.value)
       // Amplify triggers (×4) to match Android mapping; clamp to 0..1
       l2 = min(1.0, max(0.0, Double(gp.leftTrigger.value) * 4.0))
       r2 = min(1.0, max(0.0, Double(gp.rightTrigger.value) * 4.0))
-      rx = Double(gp.rightThumbstick.x)
-      ry = Double(gp.rightThumbstick.y)
+      rx = Double(gp.rightThumbstick.xAxis.value)
+      ry = Double(gp.rightThumbstick.yAxis.value)
     }
     let rightMag = max(abs(rx), abs(ry))
     let payload: [String: Any] = [
