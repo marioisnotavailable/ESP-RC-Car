@@ -183,13 +183,25 @@ void startAPPortal() {
   http.on("/app.js", HTTP_GET, [](){ if (!serveFile("/app.js")) http.send(404, "text/plain", "app.js not found"); });
   http.on("/styles.css", HTTP_GET, [](){ if (!serveFile("/styles.css")) http.send(404, "text/plain", "styles.css not found"); });
 
-  // Captive portal probes from various OS: respond with 200 to trigger portal
-  http.on("/generate_204", HTTP_GET, [](){ http.send(200, "text/plain", "OK"); }); // Android
-  http.on("/hotspot-detect.html", HTTP_GET, [](){ http.send(200, "text/html", "<html><head><title>Success</title></head><body>OK</body></html>"); }); // iOS/macOS
-  http.on("/success.txt", HTTP_GET, [](){ http.send(200, "text/plain", "Success"); });
-  http.on("/ncsi.txt", HTTP_GET, [](){ http.send(200, "text/plain", "Microsoft NCSI"); }); // Windows
-  http.on("/connecttest.txt", HTTP_GET, [](){ http.send(200, "text/plain", "OK"); });
-  http.on("/fwlink", HTTP_GET, [](){ http.sendHeader("Location", "/"); http.send(302, "text/plain", ""); });
+  // Captive portal probes from various OS: redirect to portal root to force captive browser
+  auto portalRedirect = [](){
+    http.sendHeader("Cache-Control", "no-store");
+    http.sendHeader("Location", String("http://") + WiFi.softAPIP().toString() + "/");
+    http.send(302, "text/plain", "");
+  };
+  // Android (Google/Samsung variants)
+  http.on("/generate_204", HTTP_GET, portalRedirect);   // connectivitycheck.gstatic.com / android.com / samsung.com
+  http.on("/gen_204", HTTP_GET, portalRedirect);        // www.google.com/gen_204
+  // iOS/macOS
+  http.on("/hotspot-detect.html", HTTP_GET, portalRedirect); // captive.apple.com
+  http.on("/library/test/success.html", HTTP_GET, portalRedirect); // legacy probe
+  http.on("/canonical.html", HTTP_GET, portalRedirect);
+  // Windows
+  http.on("/ncsi.txt", HTTP_GET, portalRedirect);       // msftncsi.com
+  http.on("/connecttest.txt", HTTP_GET, portalRedirect);
+  http.on("/fwlink", HTTP_GET, portalRedirect);
+  // Mozilla/Firefox captive portal detection
+  http.on("/success.txt", HTTP_GET, portalRedirect);    // detectportal.firefox.com
 
   // JSON API
   http.on("/api/saved", HTTP_GET, [](){
@@ -236,6 +248,7 @@ void startAPPortal() {
 
   // Default: redirect any unknown path to the root to help with captive portal
   http.onNotFound([](){
+    http.sendHeader("Cache-Control", "no-store");
     http.sendHeader("Location", String("http://") + WiFi.softAPIP().toString() + "/");
     http.send(302, "text/plain", "");
   });
