@@ -1,14 +1,15 @@
 #include <Arduino.h>
 #include <WiFi.h>
+#include <WiFiMulti.h>
 #include <WebServer.h>
+#include <DNSServer.h>
 #include <WebSocketsServer.h>
 #include <LittleFS.h>
+#include <Preferences.h>
+#include <vector>
 #include "driver/gpio.h"
 
 // ----------------- WLAN / AP -----------------
-#define WIFI_SSID "HTL-WLAN-IoT"
-#define WIFI_PASS "HTL2IoT!"
-const uint8_t WIFI_CH = 6;
 
 // ----------------- Pins / LED ----------------
 #define LED_PIN          13
@@ -42,6 +43,204 @@ const uint16_t BLINK_MAX_MS = 800;
 
 // ----------------- Webserver / WS ------------
 WebSocketsServer ws(81);
+WebServer http(80);
+WiFiMulti wifiMulti;
+Preferences prefs;
+DNSServer dnsServer; // for captive portal DNS redirect
+
+// ----------------- Multi-Reset Detector (3x, NVS) -------
+// Detect three quick resets within a short window to open the Wi-Fi config portal
+static const uint32_t MRD_TIMEOUT_MS = 8000;   // window to count resets
+static const uint8_t  MRD_REQUIRED  = 3;       // number of resets required
+static uint32_t       mrdClearAtMs = 0;        // when to clear counter (relative to current boot)
+static bool           mrdCleared = false;
+static bool           startConfigPortal = false;
+Preferences prefsMRD;                          // separate namespace for MRD
+
+// ----------------- Saved WiFi storage --------------------
+struct WifiNet { String ssid; String pass; };
+static std::vector<WifiNet> savedNets;
+
+void storageBegin() {
+  prefs.begin("wifi", false);
+}
+
+void storageEnd() {
+  prefs.end();
+}
+
+void loadSavedNetworks() {
+  savedNets.clear();
+  storageBegin();
+  String raw = prefs.getString("nets", "");
+  storageEnd();
+  if (raw.length() == 0) return;
+  // Format: one entry per line: ssid\tpass\n (tab separated)
+  int pos = 0;
+  while (pos < (int)raw.length()) {
+    int nl = raw.indexOf('\n', pos);
+    String line = (nl >= 0) ? raw.substring(pos, nl) : raw.substring(pos);
+    if (nl < 0) pos = raw.length(); else pos = nl + 1;
+    if (line.length() == 0) continue;
+    int sep = line.indexOf('\t');
+    if (sep <= 0) continue;
+    WifiNet n{ line.substring(0, sep), line.substring(sep + 1) };
+    if (n.ssid.length() > 0) savedNets.push_back(n);
+  }
+}
+
+void saveSavedNetworks() {
+  String out;
+  for (auto &n : savedNets) {
+    // Don't allow tabs/newlines in stored strings to keep format simple
+    String s = n.ssid; s.replace('\t', ' '); s.replace('\n', ' ');
+    String p = n.pass; p.replace('\t', ' '); p.replace('\n', ' ');
+    out += s; out += '\t'; out += p; out += '\n';
+  }
+  storageBegin();
+  prefs.putString("nets", out);
+  storageEnd();
+}
+
+bool addNetwork(const String& ssid, const String& pass) {
+  if (ssid.length() == 0) return false;
+  // de-duplicate by ssid
+  for (auto &n : savedNets) if (n.ssid == ssid) { n.pass = pass; saveSavedNetworks(); return true; }
+  if (savedNets.size() >= 16) return false; // cap
+  savedNets.push_back({ssid, pass});
+  saveSavedNetworks();
+  return true;
+}
+
+bool deleteNetworkByIndex(int idx) {
+  if (idx < 0 || (size_t)idx >= savedNets.size()) return false;
+  savedNets.erase(savedNets.begin() + idx);
+  saveSavedNetworks();
+  return true;
+}
+
+// ----------------- Network Scan (AP portal) ---------------
+struct ScanNet { String ssid; int32_t rssi; uint8_t enc; };
+static std::vector<ScanNet> lastScan;
+
+void runWiFiScan() {
+  lastScan.clear();
+  // Ensure STA is enabled for scanning
+  WiFi.mode(WIFI_AP_STA);
+  // Use passive scan with short dwell to reduce AP disconnects
+  // Signature: scanNetworks(async=false, show_hidden=false, passive=false, max_ms_per_chan=120)
+  int n = WiFi.scanNetworks(/*async=*/false, /*hidden=*/true, /*passive=*/true, /*max_ms_per_chan=*/40);
+  for (int i = 0; i < n; ++i) {
+    ScanNet s{ WiFi.SSID(i), WiFi.RSSI(i), (uint8_t)WiFi.encryptionType(i) };
+    lastScan.push_back(s);
+  }
+  WiFi.scanDelete();
+  Serial.printf("[WiFi] Scan found %d network(s)\n", (int)lastScan.size());
+}
+
+// ----------------- Config Portal (AP + HTTP) -------------
+// File serving helpers
+String getContentType(const String &path) {
+  if (path.endsWith(".html")) return "text/html";
+  if (path.endsWith(".css"))  return "text/css";
+  if (path.endsWith(".js"))   return "application/javascript";
+  if (path.endsWith(".json")) return "application/json";
+  if (path.endsWith(".png"))  return "image/png";
+  if (path.endsWith(".jpg"))  return "image/jpeg";
+  if (path.endsWith(".svg"))  return "image/svg+xml";
+  return "text/plain";
+}
+
+bool serveFile(const String &path) {
+  File f = LittleFS.open(path, "r");
+  if (!f) return false;
+  String ct = getContentType(path);
+  http.streamFile(f, ct);
+  f.close();
+  return true;
+}
+
+void startAPPortal() {
+  startConfigPortal = true;
+
+  String apSsid = String("ESP-RC-Car-Setup-") + String((uint32_t)(ESP.getEfuseMac() & 0xFFFFFF), HEX);
+  WiFi.mode(WIFI_AP_STA); // allow scanning while AP is active
+  WiFi.persistent(false);
+  WiFi.setSleep(false);
+  WiFi.softAP(apSsid.c_str());
+  IPAddress ip = WiFi.softAPIP();
+
+  Serial.printf("[WiFi] Config AP started: SSID=%s IP=%s\n", apSsid.c_str(), ip.toString().c_str());
+
+  // Pre-scan once at startup (before clients are connected) to avoid on-demand scan disconnects
+  runWiFiScan();
+
+  // Start DNS captive portal: resolve all hostnames to the AP IP
+  dnsServer.start(53, "*", ip);
+
+  // Static files
+  http.on("/", HTTP_GET, [](){ if (!serveFile("/index.html")) http.send(404, "text/plain", "index.html not found"); });
+  http.on("/app.js", HTTP_GET, [](){ if (!serveFile("/app.js")) http.send(404, "text/plain", "app.js not found"); });
+  http.on("/styles.css", HTTP_GET, [](){ if (!serveFile("/styles.css")) http.send(404, "text/plain", "styles.css not found"); });
+
+  // Captive portal probes from various OS: respond with 200 to trigger portal
+  http.on("/generate_204", HTTP_GET, [](){ http.send(200, "text/plain", "OK"); }); // Android
+  http.on("/hotspot-detect.html", HTTP_GET, [](){ http.send(200, "text/html", "<html><head><title>Success</title></head><body>OK</body></html>"); }); // iOS/macOS
+  http.on("/success.txt", HTTP_GET, [](){ http.send(200, "text/plain", "Success"); });
+  http.on("/ncsi.txt", HTTP_GET, [](){ http.send(200, "text/plain", "Microsoft NCSI"); }); // Windows
+  http.on("/connecttest.txt", HTTP_GET, [](){ http.send(200, "text/plain", "OK"); });
+  http.on("/fwlink", HTTP_GET, [](){ http.sendHeader("Location", "/"); http.send(302, "text/plain", ""); });
+
+  // JSON API
+  http.on("/api/saved", HTTP_GET, [](){
+    String j = "[";
+    for (size_t i = 0; i < savedNets.size(); ++i) {
+      if (i) j += ',';
+      j += '{';
+      j += "\"i\":" + String(i) + ",\"ssid\":\"" + savedNets[i].ssid + "\"";
+      j += '}';
+    }
+    j += "]";
+    http.send(200, "application/json", j);
+  });
+  http.on("/api/save", HTTP_POST, [](){
+    String ssid = http.arg("ssid");
+    String pass = http.arg("pass");
+    bool ok = addNetwork(ssid, pass);
+    http.send(200, "application/json", String("{\"ok\":") + (ok?"true":"false") + "}");
+  });
+  http.on("/api/delete", HTTP_POST, [](){
+    int idx = http.arg("i").toInt();
+    bool ok = deleteNetworkByIndex(idx);
+    http.send(200, "application/json", String("{\"ok\":") + (ok?"true":"false") + "}");
+  });
+  http.on("/api/scan", HTTP_POST, [](){
+    runWiFiScan();
+    String j = "[";
+    for (size_t i = 0; i < lastScan.size(); ++i) {
+      if (i) j += ',';
+      j += '{';
+      j += "\"ssid\":\"" + lastScan[i].ssid + "\",";
+      j += "\"rssi\":" + String(lastScan[i].rssi) + ",";
+      j += "\"enc\":" + String((int)lastScan[i].enc);
+      j += '}';
+    }
+    j += "]";
+    http.send(200, "application/json", j);
+  });
+  http.on("/api/reboot", HTTP_POST, [](){
+    http.send(200, "application/json", "{\"ok\":true}");
+    delay(200);
+    ESP.restart();
+  });
+
+  // Default: redirect any unknown path to the root to help with captive portal
+  http.onNotFound([](){
+    http.sendHeader("Location", String("http://") + WiFi.softAPIP().toString() + "/");
+    http.send(302, "text/plain", "");
+  });
+  http.begin();
+}
 
 // ----------------- Steuerdaten ----------------
 struct Cmd {
@@ -212,41 +411,69 @@ void setup(){
   Serial.begin(115200);
   pinMode(LED_PIN, OUTPUT);
 
-  // WLAN AP
-  WiFi.persistent(false);
-  WiFi.setSleep(false);
-  WiFi.mode(WIFI_STA);
-  WiFi.setTxPower(WIFI_POWER_19_5dBm);
-  WiFi.begin(WIFI_SSID, WIFI_PASS, WIFI_CH);
-
-  Serial.print("Connecting to WiFi ..");
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
+  // ---- Multi Reset Detection (3x quick reset, NVS based) ----
+  prefsMRD.begin("mrd", false);
+  uint8_t cnt = prefsMRD.getUChar("cnt", 0);
+  cnt++;
+  prefsMRD.putUChar("cnt", cnt);
+  Serial.printf("[MRD] boot count within window (NVS) = %u\n", (unsigned)cnt);
+  mrdClearAtMs = millis() + MRD_TIMEOUT_MS;
+  if (cnt >= MRD_REQUIRED) {
+    startConfigPortal = true;
+    prefsMRD.putUChar("cnt", 0);
+    Serial.println("[MRD] threshold reached -> starting config portal");
   }
+  prefsMRD.end();
 
-  IPAddress ip = WiFi.localIP();
-  Serial.print("AP up. SSID="); Serial.print(WIFI_SSID);
-  Serial.print("  IP="); Serial.println(ip); // -> http://192.168.4.1/
-
-  // LittleFS
+  // Filesystem for later
   if (!LittleFS.begin()) {
     Serial.println("[FS] LittleFS mount failed");
   } else {
     listFS();
   }
 
-  // WebSocket
+  // Load saved WiFi networks
+  loadSavedNetworks();
+
+  // Decide: Config portal or connect as STA
+  bool connected = false;
+  if (!startConfigPortal && !savedNets.empty()) {
+    WiFi.persistent(false);
+    WiFi.setSleep(false);
+    WiFi.mode(WIFI_STA);
+    WiFi.setTxPower(WIFI_POWER_19_5dBm);
+    // Add networks to WiFiMulti
+    for (auto &n : savedNets) {
+      wifiMulti.addAP(n.ssid.c_str(), n.pass.c_str());
+    }
+    Serial.printf("[WiFi] Trying %u saved network(s) ...\n", (unsigned)savedNets.size());
+    uint32_t t0 = millis();
+    while (millis() - t0 < 15000) { // 15s overall
+      if (wifiMulti.run() == WL_CONNECTED) { connected = true; break; }
+      delay(250);
+      Serial.print('.');
+    }
+    Serial.println();
+  }
+
+  if (connected) {
+    IPAddress ip = WiFi.localIP();
+    Serial.printf("[WiFi] Connected. IP=%s\n", ip.toString().c_str());
+  } else {
+    // Either requested by multi-reset or failed to connect -> open AP portal
+    startAPPortal();
+  }
+
+  // Start WebSocket server for control in both STA and AP modes
   ws.begin();
   ws.onEvent(onWs);
 
-  // Servo initialisieren: LEDC → Fallback
+  // Servo initialisieren (immer aktiv, auch in AP/Setup-Modus)
   if (!servoLEDCInit()) {
     servoFallbackInit();
   } else {
     g_useTimerFallback = false;
   }
-
   // Servo Mitte
   currentServoUs = SERVO_MID_US;
   servoWriteMicrosecondsUnified(SERVO_MID_US);
@@ -257,6 +484,21 @@ void setup(){
 
 // ----------------- Loop -----------------------
 void loop(){
+  // Clear MRD counter in NVS after timeout if not yet cleared
+  if (!mrdCleared && millis() >= mrdClearAtMs) {
+    prefsMRD.begin("mrd", false);
+    prefsMRD.putUChar("cnt", 0);
+    prefsMRD.end();
+    mrdCleared = true;
+    Serial.println("[MRD] window expired; counter cleared (NVS)");
+  }
+
+  if (startConfigPortal) {
+    // service DNS for captive portal
+    dnsServer.processNextRequest();
+    http.handleClient();
+  }
+
   ws.loop();
 
   // Failsafe: ohne Daten → Mitte
