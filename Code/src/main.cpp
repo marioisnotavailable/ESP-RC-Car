@@ -8,6 +8,7 @@
 #include <Preferences.h>
 #include <vector>
 #include "driver/gpio.h"
+#include <WiFiUdp.h>
 
 // ----------------- WLAN / AP -----------------
 
@@ -47,6 +48,54 @@ WebServer http(80);
 WiFiMulti wifiMulti;
 Preferences prefs;
 DNSServer dnsServer; // for captive portal DNS redirect
+WiFiUDP udp;         // UDP for discovery
+
+// ---- UDP discovery ----
+static const uint16_t DISCOVERY_PORT = 49352; // arbitrary app-specific
+static const char*    DISCOVERY_QUERY = "ESP_RC_DISCOVER";
+static const char*    DISCOVERY_RESP_PREFIX = "ESP_RC_HERE "; // followed by ws URL
+static uint32_t       nextBeaconAtMs = 0;
+
+IPAddress currentControlIP() {
+  // Prefer STA IP if connected, otherwise AP IP (if portal)
+  if (WiFi.status() == WL_CONNECTED) return WiFi.localIP();
+  return WiFi.softAPIP();
+}
+
+void udpDiscoveryBegin() {
+  udp.begin(DISCOVERY_PORT);
+}
+
+void udpDiscoveryHandle() {
+  // Respond to queries
+  int packetSize = udp.parsePacket();
+  if (packetSize > 0) {
+    char buf[64];
+    int n = udp.read(buf, sizeof(buf)-1);
+    if (n < 0) n = 0; buf[n] = '\0';
+    if (strcmp(buf, DISCOVERY_QUERY) == 0) {
+      IPAddress ip = currentControlIP();
+      char msg[96];
+      // Response: "ESP_RC_HERE ws://<ip>:81/"
+      snprintf(msg, sizeof(msg), "%sws://%s:81/", DISCOVERY_RESP_PREFIX, ip.toString().c_str());
+      udp.beginPacket(udp.remoteIP(), udp.remotePort());
+      udp.write((const uint8_t*)msg, strlen(msg));
+      udp.endPacket();
+    }
+  }
+
+  // Optional: periodic beacon (broadcast) every 2s to reduce discover latency
+  uint32_t now = millis();
+  if (now >= nextBeaconAtMs) {
+    nextBeaconAtMs = now + 2000;
+    IPAddress ip = currentControlIP();
+    char msg[96];
+    snprintf(msg, sizeof(msg), "%sws://%s:81/", DISCOVERY_RESP_PREFIX, ip.toString().c_str());
+    udp.beginPacket(IPAddress(255,255,255,255), DISCOVERY_PORT);
+    udp.write((const uint8_t*)msg, strlen(msg));
+    udp.endPacket();
+  }
+}
 
 // ----------------- Multi-Reset Detector (3x, NVS) -------
 // Detect three quick resets within a short window to open the Wi-Fi config portal
@@ -183,13 +232,25 @@ void startAPPortal() {
   http.on("/app.js", HTTP_GET, [](){ if (!serveFile("/app.js")) http.send(404, "text/plain", "app.js not found"); });
   http.on("/styles.css", HTTP_GET, [](){ if (!serveFile("/styles.css")) http.send(404, "text/plain", "styles.css not found"); });
 
-  // Captive portal probes from various OS: respond with 200 to trigger portal
-  http.on("/generate_204", HTTP_GET, [](){ http.send(200, "text/plain", "OK"); }); // Android
-  http.on("/hotspot-detect.html", HTTP_GET, [](){ http.send(200, "text/html", "<html><head><title>Success</title></head><body>OK</body></html>"); }); // iOS/macOS
-  http.on("/success.txt", HTTP_GET, [](){ http.send(200, "text/plain", "Success"); });
-  http.on("/ncsi.txt", HTTP_GET, [](){ http.send(200, "text/plain", "Microsoft NCSI"); }); // Windows
-  http.on("/connecttest.txt", HTTP_GET, [](){ http.send(200, "text/plain", "OK"); });
-  http.on("/fwlink", HTTP_GET, [](){ http.sendHeader("Location", "/"); http.send(302, "text/plain", ""); });
+  // Captive portal probes from various OS: redirect to portal root to force captive browser
+  auto portalRedirect = [](){
+    http.sendHeader("Cache-Control", "no-store");
+    http.sendHeader("Location", String("http://") + WiFi.softAPIP().toString() + "/");
+    http.send(302, "text/plain", "");
+  };
+  // Android (Google/Samsung variants)
+  http.on("/generate_204", HTTP_GET, portalRedirect);   // connectivitycheck.gstatic.com / android.com / samsung.com
+  http.on("/gen_204", HTTP_GET, portalRedirect);        // www.google.com/gen_204
+  // iOS/macOS
+  http.on("/hotspot-detect.html", HTTP_GET, portalRedirect); // captive.apple.com
+  http.on("/library/test/success.html", HTTP_GET, portalRedirect); // legacy probe
+  http.on("/canonical.html", HTTP_GET, portalRedirect);
+  // Windows
+  http.on("/ncsi.txt", HTTP_GET, portalRedirect);       // msftncsi.com
+  http.on("/connecttest.txt", HTTP_GET, portalRedirect);
+  http.on("/fwlink", HTTP_GET, portalRedirect);
+  // Mozilla/Firefox captive portal detection
+  http.on("/success.txt", HTTP_GET, portalRedirect);    // detectportal.firefox.com
 
   // JSON API
   http.on("/api/saved", HTTP_GET, [](){
@@ -236,6 +297,7 @@ void startAPPortal() {
 
   // Default: redirect any unknown path to the root to help with captive portal
   http.onNotFound([](){
+    http.sendHeader("Cache-Control", "no-store");
     http.sendHeader("Location", String("http://") + WiFi.softAPIP().toString() + "/");
     http.send(302, "text/plain", "");
   });
@@ -468,6 +530,9 @@ void setup(){
   ws.begin();
   ws.onEvent(onWs);
 
+  // Start UDP discovery service
+  udpDiscoveryBegin();
+
   // Servo initialisieren (immer aktiv, auch in AP/Setup-Modus)
   if (!servoLEDCInit()) {
     servoFallbackInit();
@@ -500,6 +565,9 @@ void loop(){
   }
 
   ws.loop();
+
+  // UDP discovery
+  udpDiscoveryHandle();
 
   // Failsafe: ohne Daten → Mitte
   if (millis() - lastCmdMs > FAILSAFE_MS) {
