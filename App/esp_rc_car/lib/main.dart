@@ -131,50 +131,102 @@ class _ControllerPageState extends State<ControllerPage> {
 
   // === Auto-discovery of WS host ===
   Future<void> _autoDiscoverWS() async {
-    // Derive local subnets from network interfaces and scan each /24.
-    // Removed probing of common/hard-coded IPs — we only perform a full
-    // /24 scan for each IPv4 interface to find a WebSocket server.
+    // Phased discovery: cover local /24 quickly, then nearby /16 windows (Class B),
+    // and seed-scan across Class A/B with minimal cost (only .1 gateways).
     try {
       final uri = Uri.parse(_wsUrl);
       final ifs = await NetworkInterface.list(includeLoopback: false, type: InternetAddressType.IPv4);
       const batchSize = 40; // parallelism per batch
-      const tryTimeoutMs = 400; // per-attempt timeout
+      const tryTimeoutMsFast = 200; // seeds/gateways
+      const tryTimeoutMs = 350; // full scans
+
+      Future<bool> tryBatch(List<String> hosts, int timeoutMs) async {
+        for (var i = 0; i < hosts.length; i += batchSize) {
+          final batch = hosts.sublist(i, (i + batchSize).clamp(0, hosts.length));
+          final futures = batch.map((host) async {
+            final tryUrl = Uri(
+              scheme: uri.scheme,
+              host: host,
+              port: uri.hasPort ? uri.port : uri.port,
+              path: uri.path,
+            ).toString();
+            try {
+              final sock = await WebSocket.connect(tryUrl).timeout(Duration(milliseconds: timeoutMs));
+              _ws = sock;
+              _ws?.listen((data) {}, onDone: _scheduleReconnect, onError: (_) => _scheduleReconnect());
+              if (mounted) setState(() {});
+              return true;
+            } catch (_) {
+              return false;
+            }
+          }).toList();
+          final results = await Future.wait(futures);
+          if (results.any((r) => r)) return true;
+        }
+        return false;
+      }
 
       for (final iface in ifs) {
         for (final addr in iface.addresses) {
           final ip = addr.address;
           final parts = ip.split('.');
           if (parts.length != 4) continue;
-          final prefix = '${parts[0]}.${parts[1]}.${parts[2]}.';
+          final a = int.tryParse(parts[0]) ?? 0;
+          final b = int.tryParse(parts[1]) ?? 0;
+          final c = int.tryParse(parts[2]) ?? 0;
+          final current24 = '${a}.${b}.${c}';
 
-          // create hosts 1..254 (skip own host)
-          final hosts = <String>[];
+          // Phase 1: full /24 of current subnet (fastest win)
+          final p1 = <String>[];
           for (var o = 1; o <= 254; o++) {
-            final h = prefix + o.toString();
+            final h = '$current24.$o';
             if (h == ip) continue;
-            hosts.add(h);
+            p1.add(h);
           }
+          if (await tryBatch(p1, tryTimeoutMs)) return;
 
-          // Scan in batches to limit parallel connections
-          for (var i = 0; i < hosts.length; i += batchSize) {
-            final batch = hosts.sublist(i, (i + batchSize).clamp(0, hosts.length));
-            final futures = batch.map((host) async {
-              final tryUrl = Uri(scheme: uri.scheme, host: host, port: uri.hasPort ? uri.port : uri.port, path: uri.path).toString();
-              try {
-                final sock = await WebSocket.connect(tryUrl).timeout(Duration(milliseconds: tryTimeoutMs));
-                // success
-                _ws = sock;
-                _ws?.listen((data) {}, onDone: _scheduleReconnect, onError: (_) => _scheduleReconnect());
-                if (mounted) setState(() {});
-                return true;
-              } catch (_) {
-                return false;
+          // Phase 2: Class B nearby /24 windows (±2 around current C)
+          final p2 = <String>[];
+          for (var cc = (c - 2); cc <= (c + 2); cc++) {
+            if (cc < 0 || cc > 254 || cc == c) continue;
+            // try gateway first (.1, .254) then rest
+            p2.add('$a.$b.$cc.1');
+            p2.add('$a.$b.$cc.254');
+          }
+          if (await tryBatch(p2, tryTimeoutMsFast)) return;
+
+          final p2full = <String>[];
+          for (var cc = (c - 2); cc <= (c + 2); cc++) {
+            if (cc < 0 || cc > 254 || cc == c) continue;
+            for (var o = 1; o <= 254; o++) {
+              p2full.add('$a.$b.$cc.$o');
+            }
+          }
+          if (await tryBatch(p2full, tryTimeoutMs)) return;
+
+          // Phase 3: Class A/B seeds: test only .1 across broad range to avoid huge scans
+          final isClassA = (a == 10);
+          final isClassB = (a == 172 && b >= 16 && b <= 31) || (a == 192 && b == 168);
+
+          final p3 = <String>[];
+          if (isClassA) {
+            // 10.b.c.1 across c 0..254 for current b
+            for (var cc = 0; cc <= 254; cc++) {
+              p3.add('$a.$b.$cc.1');
+            }
+          } else if (isClassB) {
+            // 172.b.c.1 (or 192.168.c.1) across nearby b/c windows
+            final bStart = a == 172 ? (b - 2) : b;
+            final bEnd = a == 172 ? (b + 2) : b;
+            for (var bb = bStart; bb <= bEnd; bb++) {
+              if (a == 172 && (bb < 16 || bb > 31)) continue;
+              if (a == 192 && bb != 168) continue;
+              for (var cc = 0; cc <= 254; cc++) {
+                p3.add('$a.$bb.$cc.1');
               }
-            }).toList();
-
-            final results = await Future.wait(futures);
-            if (results.any((r) => r)) return; // found one
+            }
           }
+          if (await tryBatch(p3, tryTimeoutMsFast)) return;
         }
       }
     } catch (_) {
@@ -205,38 +257,94 @@ class _ControllerPageState extends State<ControllerPage> {
       final uri = Uri.parse(_wsUrl);
       final ifs = await NetworkInterface.list(includeLoopback: false, type: InternetAddressType.IPv4);
 
+      Future<String?> tryBatch(List<String> hosts, int timeoutMs) async {
+        for (var i = 0; i < hosts.length; i += batchSize) {
+          final batch = hosts.sublist(i, (i + batchSize).clamp(0, hosts.length));
+          final futures = batch.map((host) async {
+            final tryUrl = Uri(
+              scheme: uri.scheme,
+              host: host,
+              port: uri.hasPort ? uri.port : uri.port,
+              path: uri.path,
+            ).toString();
+            try {
+              final sock = await WebSocket.connect(tryUrl).timeout(Duration(milliseconds: timeoutMs));
+              await sock.close();
+              return tryUrl;
+            } catch (_) {
+              return null;
+            }
+          }).toList();
+          final results = await Future.wait(futures);
+          for (final r in results) {
+            if (r != null) return r;
+          }
+        }
+        return null;
+      }
+
       for (final iface in ifs) {
         for (final addr in iface.addresses) {
           final ip = addr.address;
           final parts = ip.split('.');
           if (parts.length != 4) continue;
-          final prefix = '${parts[0]}.${parts[1]}.${parts[2]}.';
+          final a = int.tryParse(parts[0]) ?? 0;
+          final b = int.tryParse(parts[1]) ?? 0;
+          final c = int.tryParse(parts[2]) ?? 0;
+          final current24 = '${a}.${b}.${c}';
 
-          final hosts = <String>[];
+          // Phase 1: current /24
+          final p1 = <String>[];
           for (var o = 1; o <= 254; o++) {
-            final h = prefix + o.toString();
+            final h = '$current24.$o';
             if (h == ip) continue;
-            hosts.add(h);
+            p1.add(h);
           }
+          final r1 = await tryBatch(p1, tryTimeoutMs);
+          if (r1 != null) return r1;
 
-          for (var i = 0; i < hosts.length; i += batchSize) {
-            final batch = hosts.sublist(i, (i + batchSize).clamp(0, hosts.length));
-            final futures = batch.map((host) async {
-              final tryUrl = Uri(scheme: uri.scheme, host: host, port: uri.hasPort ? uri.port : uri.port, path: uri.path).toString();
-              try {
-                final sock = await WebSocket.connect(tryUrl).timeout(Duration(milliseconds: tryTimeoutMs));
-                await sock.close();
-                return tryUrl;
-              } catch (_) {
-                return null;
-              }
-            }).toList();
+          // Phase 2: nearby /24 windows (±2)
+          final p2seeds = <String>[];
+          for (var cc = (c - 2); cc <= (c + 2); cc++) {
+            if (cc < 0 || cc > 254 || cc == c) continue;
+            p2seeds.add('$a.$b.$cc.1');
+            p2seeds.add('$a.$b.$cc.254');
+          }
+          final r2s = await tryBatch(p2seeds, 200);
+          if (r2s != null) return r2s;
 
-            final results = await Future.wait(futures);
-            for (final r in results) {
-              if (r != null) return r;
+          final p2full = <String>[];
+          for (var cc = (c - 2); cc <= (c + 2); cc++) {
+            if (cc < 0 || cc > 254 || cc == c) continue;
+            for (var o = 1; o <= 254; o++) {
+              p2full.add('$a.$b.$cc.$o');
             }
           }
+          final r2 = await tryBatch(p2full, tryTimeoutMs);
+          if (r2 != null) return r2;
+
+          // Phase 3: broad seeds for Class A/B
+          final isClassA = (a == 10);
+          final isClassB = (a == 172 && b >= 16 && b <= 31) || (a == 192 && b == 168);
+
+          final p3 = <String>[];
+          if (isClassA) {
+            for (var cc = 0; cc <= 254; cc++) {
+              p3.add('$a.$b.$cc.1');
+            }
+          } else if (isClassB) {
+            final bStart = a == 172 ? (b - 2) : b;
+            final bEnd = a == 172 ? (b + 2) : b;
+            for (var bb = bStart; bb <= bEnd; bb++) {
+              if (a == 172 && (bb < 16 || bb > 31)) continue;
+              if (a == 192 && bb != 168) continue;
+              for (var cc = 0; cc <= 254; cc++) {
+                p3.add('$a.$bb.$cc.1');
+              }
+            }
+          }
+          final r3 = await tryBatch(p3, 200);
+          if (r3 != null) return r3;
         }
       }
     } catch (_) {
