@@ -5,6 +5,63 @@ import 'dart:io'; // WebSocket (mobile/desktop)
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:network_info_plus/network_info_plus.dart';
+
+// === Subnet scanning helpers (top-level) ===
+class _Subnet {
+  final int network; // IPv4 as int
+  final int mask; // mask as int
+  final int prefix; // CIDR prefix length (e.g., 24)
+  final String selfIp; // the device IP inside this subnet
+  _Subnet(this.network, this.mask, this.prefix, this.selfIp);
+
+  bool contains(String ipStr) {
+    final ip = _ipv4ToInt(ipStr);
+    return (ip & mask) == network;
+  }
+
+  int get firstHost {
+    return network | 1; // skip network address
+  }
+
+  int get lastHost {
+    final bcast = network | (~mask & 0xFFFFFFFF);
+    return bcast - 1; // skip broadcast
+  }
+
+  static _Subnet? fromIpMask(String ip, String maskStr) {
+    try {
+      final ipI = _ipv4ToInt(ip);
+      final maskI = _ipv4ToInt(maskStr);
+      final network = ipI & maskI;
+      final prefix = _maskToPrefix(maskI);
+      return _Subnet(network, maskI, prefix, ip);
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+int _ipv4ToInt(String ip) {
+  final p = ip.split('.').map(int.parse).toList();
+  return (p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3];
+}
+
+String _intToIpv4(int x) {
+  final a = (x >> 24) & 0xFF;
+  final b = (x >> 16) & 0xFF;
+  final c = (x >> 8) & 0xFF;
+  final d = x & 0xFF;
+  return '$a.$b.$c.$d';
+}
+
+int _maskToPrefix(int mask) {
+  var count = 0;
+  for (var i = 31; i >= 0; i--) {
+    if (((mask >> i) & 1) == 1) count++; else break;
+  }
+  return count;
+}
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -40,7 +97,7 @@ class _ControllerPageState extends State<ControllerPage> {
   // === WS ===
   // Editable WebSocket URL to help debugging on different networks/devices
   final TextEditingController _wsUrlController =
-      TextEditingController(text: 'ws://192.168.4.1:81/');
+    TextEditingController(text: 'ws://192.168.4.1:81/');
   String get _wsUrl => _wsUrlController.text;
   WebSocket? _ws;
   Timer? _reconnectTimer;
@@ -131,51 +188,18 @@ class _ControllerPageState extends State<ControllerPage> {
 
   // === Auto-discovery of WS host ===
   Future<void> _autoDiscoverWS() async {
-    // Derive local subnets from network interfaces and scan each /24.
-    // Removed probing of common/hard-coded IPs — we only perform a full
-    // /24 scan for each IPv4 interface to find a WebSocket server.
+    // Always scan the entire local subnet(s) to find the websocket host.
     try {
       final uri = Uri.parse(_wsUrl);
-      final ifs = await NetworkInterface.list(includeLoopback: false, type: InternetAddressType.IPv4);
-      const batchSize = 40; // parallelism per batch
-      const tryTimeoutMs = 400; // per-attempt timeout
-
-      for (final iface in ifs) {
-        for (final addr in iface.addresses) {
-          final ip = addr.address;
-          final parts = ip.split('.');
-          if (parts.length != 4) continue;
-          final prefix = '${parts[0]}.${parts[1]}.${parts[2]}.';
-
-          // create hosts 1..254 (skip own host)
-          final hosts = <String>[];
-          for (var o = 1; o <= 254; o++) {
-            final h = prefix + o.toString();
-            if (h == ip) continue;
-            hosts.add(h);
-          }
-
-          // Scan in batches to limit parallel connections
-          for (var i = 0; i < hosts.length; i += batchSize) {
-            final batch = hosts.sublist(i, (i + batchSize).clamp(0, hosts.length));
-            final futures = batch.map((host) async {
-              final tryUrl = Uri(scheme: uri.scheme, host: host, port: uri.hasPort ? uri.port : uri.port, path: uri.path).toString();
-              try {
-                final sock = await WebSocket.connect(tryUrl).timeout(Duration(milliseconds: tryTimeoutMs));
-                // success
-                _ws = sock;
-                _ws?.listen((data) {}, onDone: _scheduleReconnect, onError: (_) => _scheduleReconnect());
-                if (mounted) setState(() {});
-                return true;
-              } catch (_) {
-                return false;
-              }
-            }).toList();
-
-            final results = await Future.wait(futures);
-            if (results.any((r) => r)) return; // found one
-          }
-        }
+      // Try fast UDP discovery first (ESP replies or beacons)
+      final udpFound = await _udpDiscoverWS(timeoutMs: 1000);
+      if (udpFound) return;
+      final subnets = await _collectLocalSubnets();
+      // Scan each subnet fully; stop at first success
+      for (final sn in subnets) {
+        final ok = await _scanSubnetForWS(sn, uri,
+            batchSize: 96, timeoutMs: 500);
+        if (ok) return;
       }
     } catch (_) {
       // ignore errors during interface listing / scanning
@@ -199,50 +223,190 @@ class _ControllerPageState extends State<ControllerPage> {
 
   // (Ping helper removed - replaced by one-shot search button)
 
-  // One-shot search: scan local /24 subnets and return the first working ws:// URL
-  Future<String?> _searchWSOnce({int batchSize = 40, int tryTimeoutMs = 400}) async {
+  // One-shot search: scan full local subnet(s) and return the first working ws:// URL
+  Future<String?> _searchWSOnce({int batchSize = 96, int tryTimeoutMs = 400}) async {
     try {
       final uri = Uri.parse(_wsUrl);
-      final ifs = await NetworkInterface.list(includeLoopback: false, type: InternetAddressType.IPv4);
+      // Try UDP discovery first to avoid scanning
+      final udpUrl = await _udpDiscoverUrl(timeoutMs: tryTimeoutMs);
+      if (udpUrl != null) return udpUrl;
+      final subnets = await _collectLocalSubnets();
+      for (final sn in subnets) {
+        final found = await _scanSubnetForWS(sn, uri,
+            batchSize: batchSize, timeoutMs: tryTimeoutMs, returnUrl: true);
+        if (found is String) return found;
+      }
+    } catch (_) {}
+    return null;
+  }
 
+  // === UDP discovery (matches ESP responder/beacon) ===
+  static const int _discPort = 49352;
+  static const String _discQuery = 'ESP_RC_DISCOVER';
+  static const String _discRespPrefix = 'ESP_RC_HERE ';
+
+  Future<bool> _udpDiscoverWS({int timeoutMs = 800}) async {
+    final url = await _udpDiscoverUrl(timeoutMs: timeoutMs);
+    if (url == null) return false;
+    try {
+      final sock = await WebSocket.connect(url).timeout(Duration(milliseconds: timeoutMs));
+      _ws = sock;
+      _ws?.listen((data) {}, onDone: _scheduleReconnect, onError: (_) => _scheduleReconnect());
+      if (mounted) setState(() {});
+      debugPrint('[WS] UDP discovered and connected: $url');
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<String?> _udpDiscoverUrl({int timeoutMs = 800}) async {
+    RawDatagramSocket? sock;
+    try {
+      sock = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0, reuseAddress: true);
+      sock.broadcastEnabled = true;
+    } catch (_) {
+      return null;
+    }
+
+    String? foundUrl;
+    final completer = Completer<void>();
+    late StreamSubscription sub;
+    sub = sock.listen((event) {
+      if (event == RawSocketEvent.read) {
+        final dg = sock!.receive();
+        if (dg == null) return;
+        final msg = String.fromCharCodes(dg.data);
+        if (msg.startsWith(_discRespPrefix)) {
+          final url = msg.substring(_discRespPrefix.length).trim();
+          if (url.startsWith('ws://')) {
+            foundUrl = url;
+            if (!completer.isCompleted) completer.complete();
+          }
+        }
+      }
+    });
+
+    // Send a broadcast query
+    try {
+      sock.send(_discQuery.codeUnits, InternetAddress('255.255.255.255'), _discPort);
+    } catch (_) {}
+
+    // Wait for first response or timeout
+    try {
+      await completer.future.timeout(Duration(milliseconds: timeoutMs));
+    } catch (_) {}
+
+    await sub.cancel();
+    sock.close();
+    return foundUrl;
+  }
+
+  Future<List<_Subnet>> _collectLocalSubnets() async {
+    final out = <_Subnet>[];
+    // Try network_info_plus first (typically gives WiFi IP and mask on Android/iOS/Windows)
+    try {
+      final info = NetworkInfo();
+      final wifiIP = await info.getWifiIP();
+      final wifiSubmask = await info.getWifiSubmask();
+      if (wifiIP != null && wifiSubmask != null) {
+        final sn = _Subnet.fromIpMask(wifiIP, wifiSubmask);
+        if (sn != null) out.add(sn);
+      }
+    } catch (_) {}
+
+    // Fallback: enumerate interfaces; assume sensible defaults if mask unknown
+    try {
+      final ifs = await NetworkInterface.list(includeLoopback: false, type: InternetAddressType.IPv4);
       for (final iface in ifs) {
         for (final addr in iface.addresses) {
           final ip = addr.address;
           final parts = ip.split('.');
           if (parts.length != 4) continue;
-          final prefix = '${parts[0]}.${parts[1]}.${parts[2]}.';
-
-          final hosts = <String>[];
-          for (var o = 1; o <= 254; o++) {
-            final h = prefix + o.toString();
-            if (h == ip) continue;
-            hosts.add(h);
+          final a = int.tryParse(parts[0]) ?? 0;
+          final b = int.tryParse(parts[1]) ?? 0;
+          int prefix;
+          // Heuristic: private ranges typical defaults
+          if (a == 10) {
+            // Many networks use /16; scanning /8 would be too large
+            prefix = 16;
+          } else if (a == 172 && b >= 16 && b <= 31) {
+            prefix = 16; // pragmatic default
+          } else if (a == 192 && (int.tryParse(parts[1]) ?? 0) == 168) {
+            prefix = 24;
+          } else {
+            prefix = 24;
           }
-
-          for (var i = 0; i < hosts.length; i += batchSize) {
-            final batch = hosts.sublist(i, (i + batchSize).clamp(0, hosts.length));
-            final futures = batch.map((host) async {
-              final tryUrl = Uri(scheme: uri.scheme, host: host, port: uri.hasPort ? uri.port : uri.port, path: uri.path).toString();
-              try {
-                final sock = await WebSocket.connect(tryUrl).timeout(Duration(milliseconds: tryTimeoutMs));
-                await sock.close();
-                return tryUrl;
-              } catch (_) {
-                return null;
-              }
-            }).toList();
-
-            final results = await Future.wait(futures);
-            for (final r in results) {
-              if (r != null) return r;
-            }
+          final ipI = _ipv4ToInt(ip);
+          final mask = prefix == 0 ? 0 : (~((1 << (32 - prefix)) - 1)) & 0xFFFFFFFF;
+          final network = ipI & mask;
+          final sn = _Subnet(network, mask, prefix, ip);
+          // Avoid duplicates
+          if (!out.any((e) => e.network == sn.network && e.prefix == sn.prefix)) {
+            out.add(sn);
           }
         }
       }
-    } catch (_) {
-      // ignore
+    } catch (_) {}
+
+    return out;
+  }
+
+  Future<dynamic> _scanSubnetForWS(_Subnet sn, Uri template,
+      {required int batchSize, required int timeoutMs, bool returnUrl = false}) async {
+    // Scan all hosts in the subnet, skipping self, network, broadcast
+    final totalHosts = (sn.lastHost - sn.firstHost + 1).clamp(0, 1 << 24);
+    debugPrint('[WS] Scanning subnet /${sn.prefix} totalHosts=$totalHosts ...');
+
+    // Iterate in batches to avoid building massive lists in memory
+    int current = sn.firstHost;
+    while (current <= sn.lastHost) {
+      final batch = <int>[];
+      for (var i = 0; i < batchSize && current <= sn.lastHost; i++, current++) {
+        final hostIp = _intToIpv4(current);
+        if (hostIp == sn.selfIp) continue; // skip self
+        batch.add(current);
+      }
+
+      // Perform parallel connection attempts for this batch
+      final futures = batch.map((hostInt) async {
+        final host = _intToIpv4(hostInt);
+        // Only try WebSocket on port 81, with common paths
+        final paths = _candidatePaths(template.path);
+        for (final path in paths) {
+          final url = Uri(scheme: template.scheme, host: host, port: 81, path: path).toString();
+          try {
+            final sock = await WebSocket.connect(url).timeout(Duration(milliseconds: timeoutMs));
+            if (returnUrl) {
+              await sock.close();
+              return url;
+            }
+            _ws = sock;
+            _ws?.listen((data) {}, onDone: _scheduleReconnect, onError: (_) => _scheduleReconnect());
+            if (mounted) setState(() {});
+            return true;
+          } catch (_) {
+            // try next path
+          }
+        }
+        return null;
+      }).toList();
+
+      final results = await Future.wait(futures);
+      for (final r in results) {
+        if (r is String && returnUrl) return r;
+        if (r == true && !returnUrl) return true;
+      }
     }
-    return null;
+
+    return returnUrl ? null : false;
+  }
+
+  List<String> _candidatePaths(String path) {
+    // Based on ESP code (WebSocketsServer ws(81) + WebServer http(80)),
+    // the WebSocket server on port 81 typically uses the root path '/'.
+    // So only try '/'.
+    return const ['/'];
   }
 
   // === Deadzone ===
