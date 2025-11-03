@@ -8,6 +8,7 @@
 #include <Preferences.h>
 #include <vector>
 #include "driver/gpio.h"
+#include <WiFiUdp.h>
 
 // ----------------- WLAN / AP -----------------
 
@@ -47,6 +48,54 @@ WebServer http(80);
 WiFiMulti wifiMulti;
 Preferences prefs;
 DNSServer dnsServer; // for captive portal DNS redirect
+WiFiUDP udp;         // UDP for discovery
+
+// ---- UDP discovery ----
+static const uint16_t DISCOVERY_PORT = 49352; // arbitrary app-specific
+static const char*    DISCOVERY_QUERY = "ESP_RC_DISCOVER";
+static const char*    DISCOVERY_RESP_PREFIX = "ESP_RC_HERE "; // followed by ws URL
+static uint32_t       nextBeaconAtMs = 0;
+
+IPAddress currentControlIP() {
+  // Prefer STA IP if connected, otherwise AP IP (if portal)
+  if (WiFi.status() == WL_CONNECTED) return WiFi.localIP();
+  return WiFi.softAPIP();
+}
+
+void udpDiscoveryBegin() {
+  udp.begin(DISCOVERY_PORT);
+}
+
+void udpDiscoveryHandle() {
+  // Respond to queries
+  int packetSize = udp.parsePacket();
+  if (packetSize > 0) {
+    char buf[64];
+    int n = udp.read(buf, sizeof(buf)-1);
+    if (n < 0) n = 0; buf[n] = '\0';
+    if (strcmp(buf, DISCOVERY_QUERY) == 0) {
+      IPAddress ip = currentControlIP();
+      char msg[96];
+      // Response: "ESP_RC_HERE ws://<ip>:81/"
+      snprintf(msg, sizeof(msg), "%sws://%s:81/", DISCOVERY_RESP_PREFIX, ip.toString().c_str());
+      udp.beginPacket(udp.remoteIP(), udp.remotePort());
+      udp.write((const uint8_t*)msg, strlen(msg));
+      udp.endPacket();
+    }
+  }
+
+  // Optional: periodic beacon (broadcast) every 2s to reduce discover latency
+  uint32_t now = millis();
+  if (now >= nextBeaconAtMs) {
+    nextBeaconAtMs = now + 2000;
+    IPAddress ip = currentControlIP();
+    char msg[96];
+    snprintf(msg, sizeof(msg), "%sws://%s:81/", DISCOVERY_RESP_PREFIX, ip.toString().c_str());
+    udp.beginPacket(IPAddress(255,255,255,255), DISCOVERY_PORT);
+    udp.write((const uint8_t*)msg, strlen(msg));
+    udp.endPacket();
+  }
+}
 
 // ----------------- Multi-Reset Detector (3x, NVS) -------
 // Detect three quick resets within a short window to open the Wi-Fi config portal
@@ -481,6 +530,9 @@ void setup(){
   ws.begin();
   ws.onEvent(onWs);
 
+  // Start UDP discovery service
+  udpDiscoveryBegin();
+
   // Servo initialisieren (immer aktiv, auch in AP/Setup-Modus)
   if (!servoLEDCInit()) {
     servoFallbackInit();
@@ -513,6 +565,9 @@ void loop(){
   }
 
   ws.loop();
+
+  // UDP discovery
+  udpDiscoveryHandle();
 
   // Failsafe: ohne Daten → Mitte
   if (millis() - lastCmdMs > FAILSAFE_MS) {
