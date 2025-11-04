@@ -62,6 +62,13 @@ IPAddress currentControlIP() {
   return WiFi.softAPIP();
 }
 
+String buildDiscoveryResponse() {
+  IPAddress ip = currentControlIP();
+  char msg[96];
+  snprintf(msg, sizeof(msg), "%sws://%s:81/", DISCOVERY_RESP_PREFIX, ip.toString().c_str());
+  return String(msg);
+}
+
 void udpDiscoveryBegin() {
   udp.begin(DISCOVERY_PORT);
 }
@@ -74,12 +81,9 @@ void udpDiscoveryHandle() {
     int n = udp.read(buf, sizeof(buf)-1);
     if (n < 0) n = 0; buf[n] = '\0';
     if (strcmp(buf, DISCOVERY_QUERY) == 0) {
-      IPAddress ip = currentControlIP();
-      char msg[96];
-      // Response: "ESP_RC_HERE ws://<ip>:81/"
-      snprintf(msg, sizeof(msg), "%sws://%s:81/", DISCOVERY_RESP_PREFIX, ip.toString().c_str());
+      String msg = buildDiscoveryResponse();
       udp.beginPacket(udp.remoteIP(), udp.remotePort());
-      udp.write((const uint8_t*)msg, strlen(msg));
+      udp.write((const uint8_t*)msg.c_str(), msg.length());
       udp.endPacket();
     }
   }
@@ -88,11 +92,9 @@ void udpDiscoveryHandle() {
   uint32_t now = millis();
   if (now >= nextBeaconAtMs) {
     nextBeaconAtMs = now + 2000;
-    IPAddress ip = currentControlIP();
-    char msg[96];
-    snprintf(msg, sizeof(msg), "%sws://%s:81/", DISCOVERY_RESP_PREFIX, ip.toString().c_str());
+    String msg = buildDiscoveryResponse();
     udp.beginPacket(IPAddress(255,255,255,255), DISCOVERY_PORT);
-    udp.write((const uint8_t*)msg, strlen(msg));
+    udp.write((const uint8_t*)msg.c_str(), msg.length());
     udp.endPacket();
   }
 }
@@ -110,6 +112,26 @@ Preferences prefsMRD;                          // separate namespace for MRD
 struct WifiNet { String ssid; String pass; };
 static std::vector<WifiNet> savedNets;
 
+// RAII helper for Preferences to ensure proper cleanup
+class PreferencesGuard {
+private:
+  Preferences& prefs;
+public:
+  PreferencesGuard(Preferences& p, const char* name, bool readOnly = false) : prefs(p) {
+    prefs.begin(name, readOnly);
+  }
+  ~PreferencesGuard() {
+    prefs.end();
+  }
+};
+
+String sanitizeForStorage(const String& str) {
+  String result = str;
+  result.replace('\t', ' ');
+  result.replace('\n', ' ');
+  return result;
+}
+
 void storageBegin() {
   prefs.begin("wifi", false);
 }
@@ -120,9 +142,8 @@ void storageEnd() {
 
 void loadSavedNetworks() {
   savedNets.clear();
-  storageBegin();
+  PreferencesGuard guard(prefs, "wifi", true);
   String raw = prefs.getString("nets", "");
-  storageEnd();
   if (raw.length() == 0) return;
   // Format: one entry per line: ssid\tpass\n (tab separated)
   int pos = 0;
@@ -142,13 +163,12 @@ void saveSavedNetworks() {
   String out;
   for (auto &n : savedNets) {
     // Don't allow tabs/newlines in stored strings to keep format simple
-    String s = n.ssid; s.replace('\t', ' '); s.replace('\n', ' ');
-    String p = n.pass; p.replace('\t', ' '); p.replace('\n', ' ');
+    String s = sanitizeForStorage(n.ssid);
+    String p = sanitizeForStorage(n.pass);
     out += s; out += '\t'; out += p; out += '\n';
   }
-  storageBegin();
+  PreferencesGuard guard(prefs, "wifi", false);
   prefs.putString("nets", out);
-  storageEnd();
 }
 
 bool addNetwork(const String& ssid, const String& pass) {
@@ -171,6 +191,33 @@ bool deleteNetworkByIndex(int idx) {
 // ----------------- Network Scan (AP portal) ---------------
 struct ScanNet { String ssid; int32_t rssi; uint8_t enc; };
 static std::vector<ScanNet> lastScan;
+
+// ----------------- JSON Helper Functions ------------------
+String buildSavedNetworksJson() {
+  String j = "[";
+  for (size_t i = 0; i < savedNets.size(); ++i) {
+    if (i) j += ',';
+    j += '{';
+    j += "\"i\":" + String(i) + ",\"ssid\":\"" + savedNets[i].ssid + "\"";
+    j += '}';
+  }
+  j += "]";
+  return j;
+}
+
+String buildScanResultsJson() {
+  String j = "[";
+  for (size_t i = 0; i < lastScan.size(); ++i) {
+    if (i) j += ',';
+    j += '{';
+    j += "\"ssid\":\"" + lastScan[i].ssid + "\",";
+    j += "\"rssi\":" + String(lastScan[i].rssi) + ",";
+    j += "\"enc\":" + String((int)lastScan[i].enc);
+    j += '}';
+  }
+  j += "]";
+  return j;
+}
 
 void runWiFiScan() {
   lastScan.clear();
@@ -254,15 +301,7 @@ void startAPPortal() {
 
   // JSON API
   http.on("/api/saved", HTTP_GET, [](){
-    String j = "[";
-    for (size_t i = 0; i < savedNets.size(); ++i) {
-      if (i) j += ',';
-      j += '{';
-      j += "\"i\":" + String(i) + ",\"ssid\":\"" + savedNets[i].ssid + "\"";
-      j += '}';
-    }
-    j += "]";
-    http.send(200, "application/json", j);
+    http.send(200, "application/json", buildSavedNetworksJson());
   });
   http.on("/api/save", HTTP_POST, [](){
     String ssid = http.arg("ssid");
@@ -277,17 +316,7 @@ void startAPPortal() {
   });
   http.on("/api/scan", HTTP_POST, [](){
     runWiFiScan();
-    String j = "[";
-    for (size_t i = 0; i < lastScan.size(); ++i) {
-      if (i) j += ',';
-      j += '{';
-      j += "\"ssid\":\"" + lastScan[i].ssid + "\",";
-      j += "\"rssi\":" + String(lastScan[i].rssi) + ",";
-      j += "\"enc\":" + String((int)lastScan[i].enc);
-      j += '}';
-    }
-    j += "]";
-    http.send(200, "application/json", j);
+    http.send(200, "application/json", buildScanResultsJson());
   });
   http.on("/api/reboot", HTTP_POST, [](){
     http.send(200, "application/json", "{\"ok\":true}");
