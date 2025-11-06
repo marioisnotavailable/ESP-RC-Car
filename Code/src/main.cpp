@@ -65,6 +65,24 @@ WiFiUDP udp;         // UDP for discovery
 #define DISCOVERY_RESP_PREFIX "ESP_RC_HERE "   // followed by ws URL
 static uint32_t       nextBeaconAtMs = 0;
 
+// Compute a best-effort broadcast address for the active interface (STA/AP)
+static IPAddress calcBroadcastIP() {
+  // Prefer STA broadcast when connected
+  if ((WiFi.getMode() & WIFI_MODE_STA) && WiFi.status() == WL_CONNECTED) {
+    IPAddress ip = WiFi.localIP();
+    IPAddress mask = WiFi.subnetMask();
+    return IPAddress(
+      (ip[0] & mask[0]) | ((~mask[0]) & 0xFF),
+      (ip[1] & mask[1]) | ((~mask[1]) & 0xFF),
+      (ip[2] & mask[2]) | ((~mask[2]) & 0xFF),
+      (ip[3] & mask[3]) | ((~mask[3]) & 0xFF)
+    );
+  }
+  // AP mode: ESP32 default AP uses /24; use x.y.z.255 as broadcast
+  IPAddress ap = WiFi.softAPIP();
+  return IPAddress(ap[0], ap[1], ap[2], 255);
+}
+
 IPAddress currentControlIP() {
   // Prefer STA IP if connected, otherwise AP IP (if portal)
   if (WiFi.status() == WL_CONNECTED) return WiFi.localIP();
@@ -100,6 +118,14 @@ void udpDiscoveryHandle() {
     IPAddress ip = currentControlIP();
     char msg[96];
     snprintf(msg, sizeof(msg), "%sws://%s:81/", DISCOVERY_RESP_PREFIX, ip.toString().c_str());
+    // Send to both limited broadcast and subnet-directed broadcast
+    // Some stacks/routers drop one or the other; sending both improves reachability (notably iOS)
+    IPAddress bcast = calcBroadcastIP();
+    // Subnet-directed broadcast
+    udp.beginPacket(bcast, DISCOVERY_PORT);
+    udp.write((const uint8_t*)msg, strlen(msg));
+    udp.endPacket();
+    // Limited broadcast 255.255.255.255
     udp.beginPacket(IPAddress(255,255,255,255), DISCOVERY_PORT);
     udp.write((const uint8_t*)msg, strlen(msg));
     udp.endPacket();
