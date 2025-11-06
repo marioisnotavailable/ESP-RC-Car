@@ -227,6 +227,7 @@ class _ControllerPageState extends State<ControllerPage> {
     try {
       final sock = await WebSocket.connect(url).timeout(Duration(milliseconds: timeoutMs));
       _ws = sock;
+      _wsUrlController.text = url;
       _ws?.listen((data) {}, onDone: _scheduleReconnect, onError: (_) => _scheduleReconnect());
       if (mounted) setState(() {});
       debugPrint('[WS] UDP discovered and connected: $url');
@@ -242,6 +243,7 @@ class _ControllerPageState extends State<ControllerPage> {
     try {
       final sock = await WebSocket.connect(url).timeout(Duration(milliseconds: timeoutMs));
       _ws = sock;
+      _wsUrlController.text = url;
       _ws?.listen((data) {}, onDone: _scheduleReconnect, onError: (_) => _scheduleReconnect());
       if (mounted) setState(() {});
       debugPrint('[WS] TCP discovered and connected: $url');
@@ -390,7 +392,7 @@ class _ControllerPageState extends State<ControllerPage> {
 
     if (candidates.isEmpty) return null;
 
-    // Probe with bounded concurrency
+  // Probe with bounded concurrency
     const int maxConcurrent = 48;
     int idx = 0;
     String? found;
@@ -402,15 +404,8 @@ class _ControllerPageState extends State<ControllerPage> {
       final addr = candidates[idx++];
       final f = _probeHost(addr, timeoutMs: timeoutMs).then((ok) async {
         if (ok && found == null) {
-          final url = 'ws://${addr.address}:81/';
-          // Confirm with a quick WS connect to avoid false positives
-          try {
-            final sock = await WebSocket.connect(url).timeout(Duration(milliseconds: timeoutMs));
-            await sock.close();
-            found = url;
-          } catch (_) {
-            // ignore and continue
-          }
+          // Port 81 reachable; let the caller perform the WebSocket handshake.
+          found = 'ws://${addr.address}:81/';
         }
         if (found == null) {
           // continue pumping
