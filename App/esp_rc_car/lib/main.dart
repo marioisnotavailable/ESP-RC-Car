@@ -9,7 +9,7 @@ import 'package:flutter/services.dart';
 
 // === Subnet scanning helpers (top-level) ===
 class _Subnet {
-  final int network; // IPv4 as int
+  fin1al int network; // IPv4 as int
   final int mask; // mask as int
   final int prefix; // CIDR prefix length (e.g., 24)
   final String selfIp; // the device IP inside this subnet
@@ -404,8 +404,16 @@ class _ControllerPageState extends State<ControllerPage> {
       final addr = candidates[idx++];
       final f = _probeHost(addr, timeoutMs: timeoutMs).then((ok) async {
         if (ok && found == null) {
-          // Port 81 reachable; let the caller perform the WebSocket handshake.
-          found = 'ws://${addr.address}:81/';
+          // Perform a lightweight WS handshake to verify it's really our server so the ESP prints the connect event.
+          final url = 'ws://${addr.address}:81/';
+          try {
+            final sock = await WebSocket.connect(url).timeout(Duration(milliseconds: timeoutMs));
+            await sock.close();
+            found = url;
+            debugPrint('[DISCOVERY] WS handshake confirmed at ${addr.address}');
+          } catch (e) {
+            debugPrint('[DISCOVERY] Port 81 open at ${addr.address} but WS handshake failed: $e');
+          }
         }
         if (found == null) {
           // continue pumping
