@@ -9,7 +9,7 @@ import 'package:flutter/services.dart';
 
 // === Subnet scanning helpers (top-level) ===
 class _Subnet {
-  fin1al int network; // IPv4 as int
+  final int network; // IPv4 as int
   final int mask; // mask as int
   final int prefix; // CIDR prefix length (e.g., 24)
   final String selfIp; // the device IP inside this subnet
