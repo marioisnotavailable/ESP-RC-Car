@@ -190,17 +190,9 @@ class _ControllerPageState extends State<ControllerPage> {
   Future<void> _autoDiscoverWS() async {
     // Always scan the entire local subnet(s) to find the websocket host.
     try {
-      final uri = Uri.parse(_wsUrl);
-      // Try fast UDP discovery first (ESP replies or beacons)
-      final udpFound = await _udpDiscoverWS(timeoutMs: 1000);
+      // UDP discovery only
+      final udpFound = await _udpDiscoverWS(timeoutMs: 1500);
       if (udpFound) return;
-      final subnets = await _collectLocalSubnets();
-      // Scan each subnet fully; stop at first success
-      for (final sn in subnets) {
-        final ok = await _scanSubnetForWS(sn, uri,
-            batchSize: 96, timeoutMs: 500);
-        if (ok) return;
-      }
     } catch (_) {
       // ignore errors during interface listing / scanning
     }
@@ -223,19 +215,11 @@ class _ControllerPageState extends State<ControllerPage> {
 
   // (Ping helper removed - replaced by one-shot search button)
 
-  // One-shot search: scan full local subnet(s) and return the first working ws:// URL
-  Future<String?> _searchWSOnce({int batchSize = 96, int tryTimeoutMs = 400}) async {
+  // One-shot search: UDP discovery only, return the first announced ws:// URL
+  Future<String?> _searchWSOnce({int tryTimeoutMs = 400}) async {
     try {
-      final uri = Uri.parse(_wsUrl);
-      // Try UDP discovery first to avoid scanning
       final udpUrl = await _udpDiscoverUrl(timeoutMs: tryTimeoutMs);
       if (udpUrl != null) return udpUrl;
-      final subnets = await _collectLocalSubnets();
-      for (final sn in subnets) {
-        final found = await _scanSubnetForWS(sn, uri,
-            batchSize: batchSize, timeoutMs: tryTimeoutMs, returnUrl: true);
-        if (found is String) return found;
-      }
     } catch (_) {}
     return null;
   }
@@ -245,7 +229,7 @@ class _ControllerPageState extends State<ControllerPage> {
   static const String _discQuery = 'ESP_RC_DISCOVER';
   static const String _discRespPrefix = 'ESP_RC_HERE ';
 
-  Future<bool> _udpDiscoverWS({int timeoutMs = 800}) async {
+  Future<bool> _udpDiscoverWS({int timeoutMs = 1200}) async {
     final url = await _udpDiscoverUrl(timeoutMs: timeoutMs);
     if (url == null) return false;
     try {
@@ -260,10 +244,11 @@ class _ControllerPageState extends State<ControllerPage> {
     }
   }
 
-  Future<String?> _udpDiscoverUrl({int timeoutMs = 800}) async {
+  Future<String?> _udpDiscoverUrl({int timeoutMs = 1200}) async {
     RawDatagramSocket? sock;
     try {
-      sock = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0, reuseAddress: true);
+      // Bind to the discovery port so we can also receive broadcast beacons
+      sock = await RawDatagramSocket.bind(InternetAddress.anyIPv4, _discPort, reuseAddress: true);
       sock.broadcastEnabled = true;
     } catch (_) {
       return null;
@@ -287,8 +272,14 @@ class _ControllerPageState extends State<ControllerPage> {
       }
     });
 
-    // Send a broadcast query
+    // Send broadcast queries: subnet-directed broadcast(s) and limited broadcast
     try {
+      final subnets = await _collectLocalSubnets();
+      for (final sn in subnets) {
+        final bcast = _intToIpv4(sn.network | (~sn.mask & 0xFFFFFFFF));
+        sock.send(_discQuery.codeUnits, InternetAddress(bcast), _discPort);
+      }
+      // Fallback: limited broadcast
       sock.send(_discQuery.codeUnits, InternetAddress('255.255.255.255'), _discPort);
     } catch (_) {}
 
@@ -352,62 +343,7 @@ class _ControllerPageState extends State<ControllerPage> {
     return out;
   }
 
-  Future<dynamic> _scanSubnetForWS(_Subnet sn, Uri template,
-      {required int batchSize, required int timeoutMs, bool returnUrl = false}) async {
-    // Scan all hosts in the subnet, skipping self, network, broadcast
-    final totalHosts = (sn.lastHost - sn.firstHost + 1).clamp(0, 1 << 24);
-    debugPrint('[WS] Scanning subnet /${sn.prefix} totalHosts=$totalHosts ...');
-
-    // Iterate in batches to avoid building massive lists in memory
-    int current = sn.firstHost;
-    while (current <= sn.lastHost) {
-      final batch = <int>[];
-      for (var i = 0; i < batchSize && current <= sn.lastHost; i++, current++) {
-        final hostIp = _intToIpv4(current);
-        if (hostIp == sn.selfIp) continue; // skip self
-        batch.add(current);
-      }
-
-      // Perform parallel connection attempts for this batch
-      final futures = batch.map((hostInt) async {
-        final host = _intToIpv4(hostInt);
-        // Only try WebSocket on port 81, with common paths
-        final paths = _candidatePaths(template.path);
-        for (final path in paths) {
-          final url = Uri(scheme: template.scheme, host: host, port: 81, path: path).toString();
-          try {
-            final sock = await WebSocket.connect(url).timeout(Duration(milliseconds: timeoutMs));
-            if (returnUrl) {
-              await sock.close();
-              return url;
-            }
-            _ws = sock;
-            _ws?.listen((data) {}, onDone: _scheduleReconnect, onError: (_) => _scheduleReconnect());
-            if (mounted) setState(() {});
-            return true;
-          } catch (_) {
-            // try next path
-          }
-        }
-        return null;
-      }).toList();
-
-      final results = await Future.wait(futures);
-      for (final r in results) {
-        if (r is String && returnUrl) return r;
-        if (r == true && !returnUrl) return true;
-      }
-    }
-
-    return returnUrl ? null : false;
-  }
-
-  List<String> _candidatePaths(String path) {
-    // Based on ESP code (WebSocketsServer ws(81) + WebServer http(80)),
-    // the WebSocket server on port 81 typically uses the root path '/'.
-    // So only try '/'.
-    return const ['/'];
-  }
+  // Subnet host scanning removed (UDP discovery only)
 
   // === Deadzone ===
   double _applyDeadzone(double v, [double deadzone = dz]) {

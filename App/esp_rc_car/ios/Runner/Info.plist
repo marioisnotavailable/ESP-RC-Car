@@ -45,5 +45,9 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+
+	<!-- iOS 14+ Local Network privacy: allow UDP discovery on LAN -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Allow local network access to discover and connect to your ESP RC Car.</string>
 </dict>
 </plist>
