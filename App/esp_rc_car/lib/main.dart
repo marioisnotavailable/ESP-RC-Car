@@ -202,7 +202,7 @@ class _ControllerPageState extends State<ControllerPage> {
   // (Ping helper removed - replaced by one-shot search button)
 
   // One-shot search: UDP discovery only, return the first announced ws:// URL
-  Future<String?> _searchWSOnce({int tryTimeoutMs = 400}) async {
+  Future<String?> _searchWSOnce({int tryTimeoutMs = 1000}) async {
     // Try UDP first (fast path)
     try {
       final udpUrl = await _udpDiscoverUrl(timeoutMs: tryTimeoutMs);
@@ -236,7 +236,7 @@ class _ControllerPageState extends State<ControllerPage> {
     }
   }
 
-  Future<bool> _tcpDiscoverWS({int timeoutMs = 600}) async {
+  Future<bool> _tcpDiscoverWS({int timeoutMs = 1200}) async {
     final url = await _tcpDiscoverUrl(timeoutMs: timeoutMs);
     if (url == null) return false;
     try {
@@ -343,7 +343,7 @@ class _ControllerPageState extends State<ControllerPage> {
   // === TCP discovery (unicast) ===
   // Scan reachable hosts in the local subnet(s) by attempting a short TCP connect
   // to port 81. If a host is reachable, try a WebSocket connect to confirm.
-  Future<String?> _tcpDiscoverUrl({int timeoutMs = 400}) async {
+  Future<String?> _tcpDiscoverUrl({int timeoutMs = 800}) async {
     final subnets = await _collectLocalSubnets();
     if (subnets.isEmpty) return null;
 
@@ -602,12 +602,18 @@ class _ControllerPageState extends State<ControllerPage> {
                                 onPressed: () async {
                                   // capture messenger before awaiting to avoid using BuildContext across async gaps
                                   final messenger = ScaffoldMessenger.of(context);
-                                  // run a one-shot search and write the found ws url into the field
+                                  // run a one-shot search; if found, set URL and immediately connect
                                   final found = await _searchWSOnce();
                                   if (!mounted) return;
                                   if (found != null) {
                                     _wsUrlController.text = found;
-                                    messenger.showSnackBar(SnackBar(content: Text('Found: $found')));
+                                    messenger.showSnackBar(SnackBar(content: Text('Found and connecting: $found')));
+                                    // reconnect to the discovered URL
+                                    _reconnectTimer?.cancel();
+                                    await _ws?.close();
+                                    _ws = null;
+                                    setState(() {});
+                                    _connectWS();
                                   } else {
                                     messenger.showSnackBar(const SnackBar(content: Text('No WebSocket found')));
                                   }
