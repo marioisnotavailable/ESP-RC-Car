@@ -171,9 +171,14 @@ class _ControllerPageState extends State<ControllerPage> {
   Future<void> _autoDiscoverWS() async {
     // Always scan the entire local subnet(s) to find the websocket host.
     try {
-      // UDP discovery only
+      // 1) Try UDP (fast path)
       final udpFound = await _udpDiscoverWS(timeoutMs: 1500);
       if (udpFound) return;
+      // 2) Fallback: TCP unicast sweep (no broadcast/multicast needed)
+      if (_ws == null) {
+        final tcpFound = await _tcpDiscoverWS(timeoutMs: 600);
+        if (tcpFound) return;
+      }
     } catch (_) {
       // ignore errors during interface listing / scanning
     }
@@ -225,6 +230,21 @@ class _ControllerPageState extends State<ControllerPage> {
       _ws?.listen((data) {}, onDone: _scheduleReconnect, onError: (_) => _scheduleReconnect());
       if (mounted) setState(() {});
       debugPrint('[WS] UDP discovered and connected: $url');
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> _tcpDiscoverWS({int timeoutMs = 600}) async {
+    final url = await _tcpDiscoverUrl(timeoutMs: timeoutMs);
+    if (url == null) return false;
+    try {
+      final sock = await WebSocket.connect(url).timeout(Duration(milliseconds: timeoutMs));
+      _ws = sock;
+      _ws?.listen((data) {}, onDone: _scheduleReconnect, onError: (_) => _scheduleReconnect());
+      if (mounted) setState(() {});
+      debugPrint('[WS] TCP discovered and connected: $url');
       return true;
     } catch (_) {
       return false;
