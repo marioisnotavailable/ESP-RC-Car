@@ -10,50 +10,59 @@
 #include "driver/gpio.h"
 #include <WiFiUdp.h>
 
+// ----------------- Konfiguration / Konstanten -----------------
+#define HTTP_PORT                 80
+#define WS_PORT                   81
+#define WIFI_CONNECT_TOTAL_MS     15000UL  // Gesamtdauer für Verbindungsversuch
+#define WIFI_CONNECT_POLL_MS      250      // Poll-Intervall
+#define BEACON_INTERVAL_MS        2000UL   // UDP-Discovery-Beacon
+#define SCAN_DWELL_MS             40       // passives Scannen pro Kanal
+#define AP_SSID_PREFIX            "ESP-RC-Car-Setup-"
+
 // ----------------- WLAN / AP -----------------
 
 // ----------------- Pins / LED ----------------
 #define LED_PIN          13
 
 // ----------------- Servo (LEDC bevorzugt) ----
-#define LENKUNG_PIN      5     // stabiler PWM-Pin
-#define SERVO_CH         6     // LEDC-Kanal 0..7
-#define SERVO_FREQ       50    // 50 Hz
-#define SERVO_RES_BITS   12    // <=14 bei 50 Hz
+#define LENKUNG_PIN               5     // stabiler PWM-Pin
+#define SERVO_CH                  6     // LEDC-Kanal 0..7
+#define SERVO_FREQ                50    // 50 Hz
+#define SERVO_RES_BITS            12    // <=14 bei 50 Hz
 
 // Servo-Parametrisierung
-static const int   SERVO_MIN_US   = 1000;   // linker Anschlag
-static const int   SERVO_MAX_US   = 2000;   // rechter Anschlag
-static const int   SERVO_MID_US   = 1500;   // Mitte
-static const bool  SERVO_INVERT   = false;  // Richtung invertieren
-static const float SERVO_GAIN     = 1.0f;   // <1.0 weniger, >1.0 mehr Ausschlag
+#define SERVO_MIN_US              1000  // linker Anschlag
+#define SERVO_MAX_US              2000  // rechter Anschlag
+#define SERVO_MID_US              1500  // Mitte
+#define SERVO_INVERT              0     // 0=false, 1=true (Richtung invertieren)
+#define SERVO_GAIN                1.0f  // <1.0 weniger, >1.0 mehr Ausschlag
 
 // Anti-Zappeln
-static const int   SERVO_DEADZONE = 30;     // –1000..+1000
-static const int   SERVO_SLEW_US_PER_LOOP = 0; // 0 = aus (wir takten auf 50 Hz)
-static float       steerFilt = 0.0f;        // EMA-Filterzustand
-static const float FILTER_ALPHA = 0.85f;    // 0.8–0.9 = weich, 0.6 = direkter
-static uint32_t    nextServoUpdateMs = 0;   // 20ms Scheduler
+#define SERVO_DEADZONE            30    // –1000..+1000
+#define SERVO_SLEW_US_PER_LOOP    0     // 0 = aus (wir takten auf 50 Hz)
+static float       steerFilt = 0.0f;         // EMA-Filterzustand
+#define FILTER_ALPHA              0.85f // 0.8–0.9 = weich, 0.6 = direkter
+static uint32_t    nextServoUpdateMs = 0;    // 20ms Scheduler
 
 // Failsafe
-static const uint32_t FAILSAFE_MS = 400;    // ohne WS → Mitte
+#define FAILSAFE_MS               400UL // ohne WS → Mitte
 
 // LED Blink (Gas)
-const uint16_t BLINK_MIN_MS = 50;
-const uint16_t BLINK_MAX_MS = 800;
+#define BLINK_MIN_MS              50
+#define BLINK_MAX_MS              800
 
 // ----------------- Webserver / WS ------------
-WebSocketsServer ws(81);
-WebServer http(80);
+WebSocketsServer ws(WS_PORT);
+WebServer http(HTTP_PORT);
 WiFiMulti wifiMulti;
 Preferences prefs;
 DNSServer dnsServer; // for captive portal DNS redirect
 WiFiUDP udp;         // UDP for discovery
 
 // ---- UDP discovery ----
-static const uint16_t DISCOVERY_PORT = 49352; // arbitrary app-specific
-static const char*    DISCOVERY_QUERY = "ESP_RC_DISCOVER";
-static const char*    DISCOVERY_RESP_PREFIX = "ESP_RC_HERE "; // followed by ws URL
+#define DISCOVERY_PORT        49352     // arbitrary app-specific
+#define DISCOVERY_QUERY       "ESP_RC_DISCOVER"
+#define DISCOVERY_RESP_PREFIX "ESP_RC_HERE "   // followed by ws URL
 static uint32_t       nextBeaconAtMs = 0;
 
 IPAddress currentControlIP() {
@@ -87,7 +96,7 @@ void udpDiscoveryHandle() {
   // Optional: periodic beacon (broadcast) every 2s to reduce discover latency
   uint32_t now = millis();
   if (now >= nextBeaconAtMs) {
-    nextBeaconAtMs = now + 2000;
+    nextBeaconAtMs = now + BEACON_INTERVAL_MS;
     IPAddress ip = currentControlIP();
     char msg[96];
     snprintf(msg, sizeof(msg), "%sws://%s:81/", DISCOVERY_RESP_PREFIX, ip.toString().c_str());
@@ -99,8 +108,8 @@ void udpDiscoveryHandle() {
 
 // ----------------- Multi-Reset Detector (3x, NVS) -------
 // Detect three quick resets within a short window to open the Wi-Fi config portal
-static const uint32_t MRD_TIMEOUT_MS = 8000;   // window to count resets
-static const uint8_t  MRD_REQUIRED  = 3;       // number of resets required
+#define MRD_TIMEOUT_MS  8000UL  // window to count resets
+#define MRD_REQUIRED    3       // number of resets required
 static uint32_t       mrdClearAtMs = 0;        // when to clear counter (relative to current boot)
 static bool           mrdCleared = false;
 static bool           startConfigPortal = false;
@@ -178,7 +187,7 @@ void runWiFiScan() {
   WiFi.mode(WIFI_AP_STA);
   // Use passive scan with short dwell to reduce AP disconnects
   // Signature: scanNetworks(async=false, show_hidden=false, passive=false, max_ms_per_chan=120)
-  int n = WiFi.scanNetworks(/*async=*/false, /*hidden=*/true, /*passive=*/true, /*max_ms_per_chan=*/40);
+  int n = WiFi.scanNetworks(/*async=*/false, /*hidden=*/true, /*passive=*/true, /*max_ms_per_chan=*/SCAN_DWELL_MS);
   for (int i = 0; i < n; ++i) {
     ScanNet s{ WiFi.SSID(i), WiFi.RSSI(i), (uint8_t)WiFi.encryptionType(i) };
     lastScan.push_back(s);
@@ -197,6 +206,7 @@ String getContentType(const String &path) {
   if (path.endsWith(".png"))  return "image/png";
   if (path.endsWith(".jpg"))  return "image/jpeg";
   if (path.endsWith(".svg"))  return "image/svg+xml";
+  if (path.endsWith(".ico"))  return "image/x-icon";
   return "text/plain";
 }
 
@@ -212,7 +222,7 @@ bool serveFile(const String &path) {
 void startAPPortal() {
   startConfigPortal = true;
 
-  String apSsid = String("ESP-RC-Car-Setup-") + String((uint32_t)(ESP.getEfuseMac() & 0xFFFFFF), HEX);
+  String apSsid = String(AP_SSID_PREFIX) + String((uint32_t)(ESP.getEfuseMac() & 0xFFFFFF), HEX);
   WiFi.mode(WIFI_AP_STA); // allow scanning while AP is active
   WiFi.persistent(false);
   WiFi.setSleep(false);
@@ -510,9 +520,9 @@ void setup(){
     }
     Serial.printf("[WiFi] Trying %u saved network(s) ...\n", (unsigned)savedNets.size());
     uint32_t t0 = millis();
-    while (millis() - t0 < 15000) { // 15s overall
+    while (millis() - t0 < WIFI_CONNECT_TOTAL_MS) {
       if (wifiMulti.run() == WL_CONNECTED) { connected = true; break; }
-      delay(250);
+      delay(WIFI_CONNECT_POLL_MS);
       Serial.print('.');
     }
     Serial.println();
