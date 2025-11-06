@@ -330,6 +330,7 @@ class _ControllerPageState extends State<ControllerPage> {
     // Build a prioritized candidate list: for each subnet, probe a small set
     // of likely addresses first (gateway-ish, dhcp-ish, neighbors), then expand.
     final candidates = <InternetAddress>[];
+    final seen = <String>{};
     for (final sn in subnets) {
       final first = sn.firstHost;
       final last = sn.lastHost;
@@ -338,7 +339,10 @@ class _ControllerPageState extends State<ControllerPage> {
       // Helper to add if within range
       void addIf(int ipInt) {
         if (ipInt >= first && ipInt <= last && ipInt != self) {
-          candidates.add(InternetAddress(_intToIpv4(ipInt)));
+          final addrStr = _intToIpv4(ipInt);
+          if (seen.add(addrStr)) {
+            candidates.add(InternetAddress(addrStr));
+          }
         }
       }
 
@@ -355,15 +359,12 @@ class _ControllerPageState extends State<ControllerPage> {
         addIf(self + d);
       }
 
-      // If still nothing, add a limited sweep across the /24 window
-      // to keep time bounded. We’ll step by 4 to reduce attempts.
+      // Danach: kompletter Sweep des /24-Fensters (ganze Reichweite scannen)
       final start = (first > (base | 1)) ? first : (base | 1);
       final end = (last < (base | 255)) ? last : (base | 255);
-      int added = 0;
-      for (int ip = start; ip <= end && added < 96; ip += 4) {
+      for (int ip = start; ip <= end; ip += 1) {
         if (ip == self) continue;
         addIf(ip);
-        added++;
       }
     }
 
