@@ -5,7 +5,7 @@ import 'dart:io'; // WebSocket (mobile/desktop)
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:network_info_plus/network_info_plus.dart';
+// Note: we avoid platform plugins here to keep discovery portable without extra entitlements
 
 // === Subnet scanning helpers (top-level) ===
 class _Subnet {
@@ -28,18 +28,6 @@ class _Subnet {
     final bcast = network | (~mask & 0xFFFFFFFF);
     return bcast - 1; // skip broadcast
   }
-
-  static _Subnet? fromIpMask(String ip, String maskStr) {
-    try {
-      final ipI = _ipv4ToInt(ip);
-      final maskI = _ipv4ToInt(maskStr);
-      final network = ipI & maskI;
-      final prefix = _maskToPrefix(maskI);
-      return _Subnet(network, maskI, prefix, ip);
-    } catch (_) {
-      return null;
-    }
-  }
 }
 
 int _ipv4ToInt(String ip) {
@@ -55,13 +43,6 @@ String _intToIpv4(int x) {
   return '$a.$b.$c.$d';
 }
 
-int _maskToPrefix(int mask) {
-  var count = 0;
-  for (var i = 31; i >= 0; i--) {
-    if (((mask >> i) & 1) == 1) count++; else break;
-  }
-  return count;
-}
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -217,9 +198,15 @@ class _ControllerPageState extends State<ControllerPage> {
 
   // One-shot search: UDP discovery only, return the first announced ws:// URL
   Future<String?> _searchWSOnce({int tryTimeoutMs = 400}) async {
+    // Try UDP first (fast path)
     try {
       final udpUrl = await _udpDiscoverUrl(timeoutMs: tryTimeoutMs);
       if (udpUrl != null) return udpUrl;
+    } catch (_) {}
+    // Fallback: quick TCP port scan (unicast), no multicast/broadcast required
+    try {
+      final tcpUrl = await _tcpDiscoverUrl(timeoutMs: tryTimeoutMs);
+      if (tcpUrl != null) return tcpUrl;
     } catch (_) {}
     return null;
   }
@@ -295,18 +282,7 @@ class _ControllerPageState extends State<ControllerPage> {
 
   Future<List<_Subnet>> _collectLocalSubnets() async {
     final out = <_Subnet>[];
-    // Try network_info_plus first (typically gives WiFi IP and mask on Android/iOS/Windows)
-    try {
-      final info = NetworkInfo();
-      final wifiIP = await info.getWifiIP();
-      final wifiSubmask = await info.getWifiSubmask();
-      if (wifiIP != null && wifiSubmask != null) {
-        final sn = _Subnet.fromIpMask(wifiIP, wifiSubmask);
-        if (sn != null) out.add(sn);
-      }
-    } catch (_) {}
-
-    // Fallback: enumerate interfaces; assume sensible defaults if mask unknown
+    // Enumerate interfaces; assume sensible defaults if mask unknown
     try {
       final ifs = await NetworkInterface.list(includeLoopback: false, type: InternetAddressType.IPv4);
       for (final iface in ifs) {
@@ -344,6 +320,105 @@ class _ControllerPageState extends State<ControllerPage> {
   }
 
   // Subnet host scanning removed (UDP discovery only)
+  // === TCP discovery (unicast) ===
+  // Scan reachable hosts in the local subnet(s) by attempting a short TCP connect
+  // to port 81. If a host is reachable, try a WebSocket connect to confirm.
+  Future<String?> _tcpDiscoverUrl({int timeoutMs = 400}) async {
+    final subnets = await _collectLocalSubnets();
+    if (subnets.isEmpty) return null;
+
+    // Build a prioritized candidate list: for each subnet, probe a small set
+    // of likely addresses first (gateway-ish, dhcp-ish, neighbors), then expand.
+    final candidates = <InternetAddress>[];
+    for (final sn in subnets) {
+      final first = sn.firstHost;
+      final last = sn.lastHost;
+      final self = _ipv4ToInt(sn.selfIp);
+
+      // Helper to add if within range
+      void addIf(int ipInt) {
+        if (ipInt >= first && ipInt <= last && ipInt != self) {
+          candidates.add(InternetAddress(_intToIpv4(ipInt)));
+        }
+      }
+
+      // Common candidates within a /24 (or narrower window if larger net)
+      final base = (self & 0xFFFFFF00);
+      final commonLastOctets = <int>[1, 10, 20, 50, 80, 100, 120, 150, 180, 200, 220, 240, 250];
+      for (final lo in commonLastOctets) {
+        addIf(base | lo);
+      }
+
+      // Neighbors around self
+      for (int d = 1; d <= 6; d++) {
+        addIf(self - d);
+        addIf(self + d);
+      }
+
+      // If still nothing, add a limited sweep across the /24 window
+      // to keep time bounded. We’ll step by 4 to reduce attempts.
+      final start = (first > (base | 1)) ? first : (base | 1);
+      final end = (last < (base | 255)) ? last : (base | 255);
+      int added = 0;
+      for (int ip = start; ip <= end && added < 96; ip += 4) {
+        if (ip == self) continue;
+        addIf(ip);
+        added++;
+      }
+    }
+
+    if (candidates.isEmpty) return null;
+
+    // Probe with bounded concurrency
+    const int maxConcurrent = 48;
+    int idx = 0;
+    String? found;
+    final inFlight = <Future>[];
+
+    Future<void> spawnNext() async {
+      if (found != null) return; // early stop
+      if (idx >= candidates.length) return;
+      final addr = candidates[idx++];
+      final f = _probeHost(addr, timeoutMs: timeoutMs).then((ok) async {
+        if (ok && found == null) {
+          final url = 'ws://${addr.address}:81/';
+          // Confirm with a quick WS connect to avoid false positives
+          try {
+            final sock = await WebSocket.connect(url).timeout(Duration(milliseconds: timeoutMs));
+            await sock.close();
+            found = url;
+          } catch (_) {
+            // ignore and continue
+          }
+        }
+        if (found == null) {
+          // continue pumping
+          await spawnNext();
+        }
+      });
+      inFlight.add(f);
+    }
+
+    // Start initial wave
+    final initial = candidates.length < maxConcurrent ? candidates.length : maxConcurrent;
+    for (int i = 0; i < initial; i++) {
+      await spawnNext();
+    }
+
+    // Wait for completion or first found
+    await Future.wait(inFlight);
+    return found;
+  }
+
+  Future<bool> _probeHost(InternetAddress addr, {int timeoutMs = 400}) async {
+    try {
+      final s = await Socket.connect(addr, 81, timeout: Duration(milliseconds: timeoutMs));
+      s.destroy();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
 
   // === Deadzone ===
   double _applyDeadzone(double v, [double deadzone = dz]) {
