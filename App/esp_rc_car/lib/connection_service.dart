@@ -10,6 +10,13 @@ enum ConnectionStatus {
   connected,
 }
 
+enum DiscoveryMethod {
+  none,
+  udp,
+  tcp,
+  manual,
+}
+
 class ConnectionService extends ChangeNotifier {
   ConnectionService() {
     _status.addListener(notifyListeners);
@@ -20,6 +27,10 @@ class ConnectionService extends ChangeNotifier {
   final ValueNotifier<ConnectionStatus> _status =
       ValueNotifier(ConnectionStatus.disconnected);
   ValueListenable<ConnectionStatus> get status => _status;
+
+  final ValueNotifier<DiscoveryMethod> _discoveryMethod =
+      ValueNotifier(DiscoveryMethod.none);
+  ValueListenable<DiscoveryMethod> get discoveryMethod => _discoveryMethod;
 
   WebSocket? _socket;
   WebSocket? get socket => _socket;
@@ -38,20 +49,27 @@ class ConnectionService extends ChangeNotifier {
         _status.value == ConnectionStatus.connecting) return;
 
     _status.value = ConnectionStatus.scanning;
+    _discoveryMethod.value = DiscoveryMethod.none;
     _disconnect(quiet: true);
 
     try {
       // Try UDP discovery first
       String? foundUrl = await _udpDiscoverUrl(timeoutMs: 1500);
+      if (foundUrl != null) {
+        _discoveryMethod.value = DiscoveryMethod.udp;
+      }
 
       // Fallback to TCP scan if UDP fails
       foundUrl ??= await _tcpDiscoverUrl(timeoutMs: 4000);
+      if (foundUrl != null && _discoveryMethod.value == DiscoveryMethod.none) {
+        _discoveryMethod.value = DiscoveryMethod.tcp;
+      }
 
       if (foundUrl != null) {
         await connect(foundUrl);
       } else {
         // If nothing found, try the default URL as a last resort
-        await connect(_wsUrl);
+        await connect(_wsUrl, isManual: true);
       }
     } catch (e) {
       debugPrint('[Discovery] Error: $e');
@@ -59,11 +77,14 @@ class ConnectionService extends ChangeNotifier {
     }
   }
 
-  Future<void> connect(String url) async {
+  Future<void> connect(String url, {bool isManual = false}) async {
     if (_status.value == ConnectionStatus.connecting && url == _wsUrl) return;
-    
+
     _status.value = ConnectionStatus.connecting;
     _wsUrl = url;
+    if (isManual) {
+      _discoveryMethod.value = DiscoveryMethod.manual;
+    }
     notifyListeners();
 
     try {
@@ -119,6 +140,7 @@ class ConnectionService extends ChangeNotifier {
     _socket = null;
     if (!quiet) {
       _status.value = ConnectionStatus.disconnected;
+      _discoveryMethod.value = DiscoveryMethod.none;
     }
   }
 
@@ -280,6 +302,7 @@ class ConnectionService extends ChangeNotifier {
     _disconnect();
     _status.removeListener(notifyListeners);
     _status.dispose();
+    _discoveryMethod.dispose();
     super.dispose();
   }
 }
