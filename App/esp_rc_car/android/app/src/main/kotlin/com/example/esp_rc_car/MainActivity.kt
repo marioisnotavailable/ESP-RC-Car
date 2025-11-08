@@ -70,7 +70,13 @@ class MainActivity : FlutterActivity(), InputManager.InputDeviceListener {
     }
 
     private fun findFirstGamepad(): InputDevice? {
-        return InputDevice.getDeviceIds().mapNotNull { InputDevice.getDevice(it) }.firstOrNull { isGamepad(it) }
+        for (deviceId in InputDevice.getDeviceIds()) {
+            val device = InputDevice.getDevice(deviceId)
+            if (isGamepad(device)) {
+                return device
+            }
+        }
+        return null
     }
 
     private fun processMotionEvent(event: MotionEvent) {
