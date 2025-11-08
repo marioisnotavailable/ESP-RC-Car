@@ -57,6 +57,9 @@ class _ControllerPageState extends State<ControllerPage> {
   double _steerFilt = 0;
   double _thrFilt = 0;
 
+  // UI State
+  bool _showDevPanel = false;
+
   // Gamepad
   static const _gamepadChannel = EventChannel('rc.gamepad/events');
   StreamSubscription? _gpSub;
@@ -148,48 +151,61 @@ class _ControllerPageState extends State<ControllerPage> {
 
     return Scaffold(
       body: SafeArea(
-        child: Column(
-          children: [
-            const DevPanel(),
-            Expanded(
-              child: Stack(
-                children: [
-                  if (!_gamepadConnected) ...[
-                    Align(
-                      alignment: const Alignment(-0.98, 0.6),
-                      child: EdgeStickyJoystick(
-                        stickSize: stickSize,
-                        knobSize: knobSize,
-                        verticalOnly: true,
-                        sensitivity: 0.8,
-                        externalValue: Offset(0, _thrFilt / maxVal),
-                        onChanged: (o) => setState(() => _throttle = o.dy.clamp(-1.0, 1.0) * maxVal),
-                        onEnd: () => setState(() => _throttle = 0),
+        child: GestureDetector(
+          onTap: () => FocusScope.of(context).unfocus(),
+          child: Column(
+            children: [
+              DevPanel(
+                isExpanded: _showDevPanel,
+                onToggle: () => setState(() => _showDevPanel = !_showDevPanel),
+              ),
+              Expanded(
+                child: Stack(
+                  children: [
+                    if (!_gamepadConnected) ...[
+                      Align(
+                        alignment: const Alignment(-0.98, 0.6),
+                        child: EdgeStickyJoystick(
+                          stickSize: stickSize,
+                          knobSize: knobSize,
+                          verticalOnly: true,
+                          externalValue: Offset(0, _thrFilt / maxVal),
+                          sensitivity: 0.6,
+                          onChanged: (offset) => setState(() => _throttle = offset.dy * maxVal),
+                          onEnd: () => setState(() => _throttle = 0),
+                        ),
                       ),
-                    ),
-                    Align(
-                      alignment: const Alignment(0.98, 0.6),
-                      child: EdgeStickyJoystick(
-                        stickSize: stickSize,
-                        knobSize: knobSize,
-                        verticalOnly: false,
-                        sensitivity: 0.8,
-                        externalValue: Offset(_steerFilt / maxVal, 0),
-                        onChanged: (o) => setState(() => _steer = o.dx.clamp(-1.0, 1.0) * maxVal),
-                        onEnd: () => setState(() => _steer = 0),
+                      Align(
+                        alignment: const Alignment(0.98, 0.6),
+                        child: EdgeStickyJoystick(
+                          stickSize: stickSize,
+                          knobSize: knobSize,
+                          horizontalOnly: true,
+                          externalValue: Offset(_steerFilt / maxVal, 0),
+                          sensitivity: 0.6,
+                          onChanged: (offset) => setState(() => _steer = offset.dx * maxVal),
+                          onEnd: () => setState(() => _steer = 0),
+                        ),
                       ),
+                    ],
+                    if (_showDevPanel)
+                      Align(
+                        alignment: const Alignment(0.0, -0.6),
+                        child: Text(
+                          'Thr: ${_thrFilt.round()} | Steer: ${_steerFilt.round()}',
+                          style: const TextStyle(color: Colors.white54, fontSize: 14),
+                        ),
+                      ),
+                    GamepadStatus(
+                      isConnected: _gamepadConnected,
+                      throttle: _thrFilt,
+                      maxVal: maxVal,
                     ),
                   ],
-                  GamepadStatus(
-                    isConnected: _gamepadConnected,
-                    throttle: _thrFilt,
-                    maxVal: maxVal,
-                  ),
-                ],
+                ),
               ),
-            ),
-            const SizedBox(height: 6),
-          ],
+            ],
+          ),
         ),
       ),
     );
