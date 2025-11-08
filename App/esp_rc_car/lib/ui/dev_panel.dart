@@ -44,12 +44,12 @@ class _DevPanelState extends State<DevPanel> {
                             contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                             border: OutlineInputBorder(),
                           ),
-                          onSubmitted: (url) => connectionService.connect(url),
+                          onSubmitted: (url) => connectionService.connect(url, isManual: true),
                         ),
                       ),
                       const SizedBox(width: 8),
                       ElevatedButton(
-                        onPressed: () => connectionService.connect(wsUrlController.text),
+                        onPressed: () => connectionService.connect(wsUrlController.text, isManual: true),
                         child: const Text('Connect'),
                       ),
                       const SizedBox(width: 8),
@@ -100,6 +100,30 @@ class _DevPanelState extends State<DevPanel> {
                       'WS: $statusText',
                       style: TextStyle(color: statusColor, fontSize: 13),
                     ),
+                    if (status == ConnectionStatus.connected)
+                      ValueListenableBuilder<DiscoveryMethod>(
+                        valueListenable: connectionService.discoveryMethod,
+                        builder: (context, method, child) {
+                          String methodText = '';
+                          switch (method) {
+                            case DiscoveryMethod.udp:
+                              methodText = ' (UDP Beacon)';
+                              break;
+                            case DiscoveryMethod.tcp:
+                              methodText = ' (TCP Scan)';
+                              break;
+                            case DiscoveryMethod.manual:
+                              methodText = ' (Manual)';
+                              break;
+                            case DiscoveryMethod.none:
+                              break;
+                          }
+                          return Text(
+                            methodText,
+                            style: TextStyle(color: Colors.grey[400], fontSize: 13),
+                          );
+                        },
+                      ),
                   ],
                 );
               },
