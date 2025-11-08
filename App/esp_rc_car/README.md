@@ -2,7 +2,7 @@
 
 This is the companion Flutter application for the ESP32-based RC car project. It provides a real-time, low-latency interface to control the car's throttle and steering over a WebSocket connection.
 
-![App Screenshot](https://user-images.githubusercontent.com/12345/screenshot.png) <!-- Placeholder for a screenshot -->
+![App Screenshot](../AppWithoutDev.png)
 
 ## Features
 
