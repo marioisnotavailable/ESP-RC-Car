@@ -3,39 +3,74 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 class DevPanel extends StatefulWidget {
-  const DevPanel({super.key});
+  final bool isExpanded;
+  final VoidCallback onToggle;
+
+  const DevPanel({
+    super.key,
+    required this.isExpanded,
+    required this.onToggle,
+  });
 
   @override
   State<DevPanel> createState() => _DevPanelState();
 }
 
 class _DevPanelState extends State<DevPanel> {
-  bool _showDevPanel = false;
+  late final TextEditingController _wsUrlController;
+  late ConnectionService _connectionService;
+
+  @override
+  void initState() {
+    super.initState();
+    _connectionService = context.read<ConnectionService>();
+    _wsUrlController = TextEditingController(text: _connectionService.wsUrl);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // If the URL in the service changes (e.g., from auto-discovery),
+    // update the text field, but only if the user isn't currently focused on it.
+    if (!FocusScope.of(context).hasFocus) {
+      final newUrl = context.watch<ConnectionService>().wsUrl;
+      if (_wsUrlController.text != newUrl) {
+        _wsUrlController.text = newUrl;
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _wsUrlController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final connectionService = context.watch<ConnectionService>();
-    final wsUrlController = TextEditingController(text: connectionService.wsUrl);
 
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(8, 8, 8, 6),
-          child: Row(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               IconButton(
-                icon: Icon(_showDevPanel ? Icons.expand_less : Icons.expand_more, color: Colors.white),
-                onPressed: () => setState(() => _showDevPanel = !_showDevPanel),
+                icon: Icon(widget.isExpanded ? Icons.expand_less : Icons.expand_more, color: Colors.white),
+                onPressed: widget.onToggle,
                 tooltip: 'Toggle Dev Panel',
               ),
               const SizedBox(width: 8),
-              if (_showDevPanel)
+              if (widget.isExpanded)
                 Expanded(
                   child: Row(
                     children: [
                       Expanded(
                         child: TextField(
-                          controller: wsUrlController,
+                          controller: _wsUrlController,
                           style: const TextStyle(color: Color(0xFF99AADD)),
                           decoration: const InputDecoration(
                             hintText: 'ws://...',
@@ -49,7 +84,7 @@ class _DevPanelState extends State<DevPanel> {
                       ),
                       const SizedBox(width: 8),
                       ElevatedButton(
-                        onPressed: () => connectionService.connect(wsUrlController.text, isManual: true),
+                        onPressed: () => connectionService.connect(_wsUrlController.text, isManual: true),
                         child: const Text('Connect'),
                       ),
                       const SizedBox(width: 8),
@@ -64,72 +99,81 @@ class _DevPanelState extends State<DevPanel> {
                 const Spacer(),
             ],
           ),
-        ),
-        if (_showDevPanel)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-            child: ValueListenableBuilder<ConnectionStatus>(
-              valueListenable: connectionService.status,
-              builder: (context, status, child) {
-                String statusText;
-                Color statusColor;
-                switch (status) {
-                  case ConnectionStatus.disconnected:
-                    statusText = 'Disconnected';
-                    statusColor = Colors.red;
-                    break;
-                  case ConnectionStatus.scanning:
-                    statusText = 'Scanning...';
-                    statusColor = Colors.orange;
-                    break;
-                  case ConnectionStatus.connecting:
-                    statusText = 'Connecting...';
-                    statusColor = Colors.yellow;
-                    break;
-                  case ConnectionStatus.connected:
-                    statusText = 'Connected';
-                    statusColor = Colors.green;
-                    break;
-                }
-                return Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.circle, color: statusColor, size: 12),
-                    const SizedBox(width: 8),
-                    Text(
-                      'WS: $statusText',
-                      style: TextStyle(color: statusColor, fontSize: 13),
-                    ),
-                    if (status == ConnectionStatus.connected)
-                      ValueListenableBuilder<DiscoveryMethod>(
-                        valueListenable: connectionService.discoveryMethod,
-                        builder: (context, method, child) {
-                          String methodText = '';
-                          switch (method) {
-                            case DiscoveryMethod.udp:
-                              methodText = ' (UDP Beacon)';
-                              break;
-                            case DiscoveryMethod.tcp:
-                              methodText = ' (TCP Scan)';
-                              break;
-                            case DiscoveryMethod.manual:
-                              methodText = ' (Manual)';
-                              break;
-                            case DiscoveryMethod.none:
-                              break;
-                          }
-                          return Text(
-                            methodText,
-                            style: TextStyle(color: Colors.grey[400], fontSize: 13),
-                          );
-                        },
-                      ),
-                  ],
-                );
-              },
-            ),
-          ),
-      ],
+          if (widget.isExpanded) const ConnectionStatusView(),
+        ],
+      ),
+    );
+  }
+}
+
+class ConnectionStatusView extends StatelessWidget {
+  const ConnectionStatusView({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final connectionService = context.watch<ConnectionService>();
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+      child: ValueListenableBuilder<ConnectionStatus>(
+        valueListenable: connectionService.status,
+        builder: (context, status, child) {
+          String statusText;
+          Color statusColor;
+          switch (status) {
+            case ConnectionStatus.disconnected:
+              statusText = 'Disconnected';
+              statusColor = Colors.red;
+              break;
+            case ConnectionStatus.scanning:
+              statusText = 'Scanning...';
+              statusColor = Colors.orange;
+              break;
+            case ConnectionStatus.connecting:
+              statusText = 'Connecting...';
+              statusColor = Colors.yellow;
+              break;
+            case ConnectionStatus.connected:
+              statusText = 'Connected';
+              statusColor = Colors.green;
+              break;
+          }
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.circle, color: statusColor, size: 12),
+              const SizedBox(width: 8),
+              Text(
+                'WS: $statusText',
+                style: TextStyle(color: statusColor, fontSize: 13),
+              ),
+              if (status == ConnectionStatus.connected)
+                ValueListenableBuilder<DiscoveryMethod>(
+                  valueListenable: connectionService.discoveryMethod,
+                  builder: (context, method, child) {
+                    String methodText = '';
+                    switch (method) {
+                      case DiscoveryMethod.udp:
+                        methodText = ' (UDP)';
+                        break;
+                      case DiscoveryMethod.tcp:
+                        methodText = ' (TCP)';
+                        break;
+                      case DiscoveryMethod.manual:
+                        methodText = ' (Manual)';
+                        break;
+                      case DiscoveryMethod.none:
+                        break;
+                    }
+                    return Text(
+                      methodText,
+                      style: TextStyle(color: Colors.grey[400], fontSize: 13),
+                    );
+                  },
+                ),
+            ],
+          );
+        },
+      ),
     );
   }
 }

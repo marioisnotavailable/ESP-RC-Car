@@ -6,8 +6,9 @@ class EdgeStickyJoystick extends StatelessWidget {
   final double stickSize;
   final double knobSize;
   final bool verticalOnly;
+  final bool horizontalOnly;
   final double sensitivity;
-  
+
   final Offset externalValue;
   final ValueChanged<Offset>? onChanged;
   final VoidCallback? onEnd;
@@ -16,7 +17,8 @@ class EdgeStickyJoystick extends StatelessWidget {
     super.key,
     required this.stickSize,
     required this.knobSize,
-    required this.verticalOnly,
+    this.verticalOnly = false,
+    this.horizontalOnly = false,
     required this.externalValue,
     required this.sensitivity,
     this.onChanged,
@@ -37,6 +39,7 @@ class EdgeStickyJoystick extends StatelessWidget {
             size: stickSize,
             knobSize: knobSize,
             verticalOnly: verticalOnly,
+            horizontalOnly: horizontalOnly,
             externalValue: externalValue,
             sensitivity: sensitivity,
             onChanged: onChanged,
@@ -53,6 +56,7 @@ class Joystick extends StatefulWidget {
   final double size;
   final double knobSize;
   final bool verticalOnly;
+  final bool horizontalOnly;
   final Offset externalValue; // Normalized input (-1.0 to 1.0)
   final double sensitivity;
   final ValueChanged<Offset>? onChanged;
@@ -62,7 +66,8 @@ class Joystick extends StatefulWidget {
     super.key,
     required this.size,
     required this.knobSize,
-    required this.verticalOnly,
+    this.verticalOnly = false,
+    this.horizontalOnly = false,
     required this.externalValue,
     this.sensitivity = 0.8,
     this.onChanged,
@@ -113,16 +118,18 @@ class _JoystickState extends State<Joystick> {
   void _handlePanUpdate(DragUpdateDetails details) {
     _updatePosition(details.localPosition);
   }
-  
+
   void _updatePosition(Offset localPosition) {
     final desiredKnobCenter = localPosition - (_pointerOffset ?? Offset.zero);
     final center = Offset(widget.size / 2, widget.size / 2);
     final vector = desiredKnobCenter - center;
-    
+
     var norm = Offset(vector.dx / (_radius * _sensitivity), -vector.dy / (_radius * _sensitivity));
-    
+
     if (widget.verticalOnly) {
       norm = Offset(0, norm.dy);
+    } else if (widget.horizontalOnly) {
+      norm = Offset(norm.dx, 0);
     }
 
     final clamped = _clampNorm(norm);
