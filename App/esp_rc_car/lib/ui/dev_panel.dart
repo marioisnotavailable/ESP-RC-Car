@@ -90,7 +90,7 @@ class _DevPanelState extends State<DevPanel> {
                       const SizedBox(width: 8),
                       ElevatedButton(
                         onPressed: () => connectionService.findAndConnect(),
-                        child: const Text('Search'),
+                        child: Text(connectionService.status.value == ConnectionStatus.scanning ? 'Stop' : 'Search'),
                       ),
                     ],
                   ),
@@ -159,6 +159,9 @@ class ConnectionStatusView extends StatelessWidget {
                         break;
                       case DiscoveryMethod.manual:
                         methodText = ' (Manual)';
+                        break;
+                      case DiscoveryMethod.lastKnown:
+                        methodText = ' (Last Known)';
                         break;
                       case DiscoveryMethod.none:
                         break;
