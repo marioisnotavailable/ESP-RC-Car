@@ -89,8 +89,19 @@ class _DevPanelState extends State<DevPanel> {
                       ),
                       const SizedBox(width: 8),
                       ElevatedButton(
-                        onPressed: () => connectionService.findAndConnect(),
-                        child: Text(connectionService.status.value == ConnectionStatus.scanning ? 'Stop' : 'Search'),
+                        onPressed: () {
+                          final service = context.read<ConnectionService>();
+                          if (service.status.value == ConnectionStatus.scanning) {
+                            service.stopScan();
+                          } else {
+                            service.findAndConnect(withLastKnown: false);
+                          }
+                        },
+                        child: Text(
+                          connectionService.status.value == ConnectionStatus.scanning
+                              ? 'Stop'
+                              : 'Search',
+                        ),
                       ),
                     ],
                   ),

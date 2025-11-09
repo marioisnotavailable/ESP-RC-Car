@@ -48,6 +48,14 @@ class ControllerService extends ChangeNotifier {
     _throttle = throttle;
   }
 
+  void setSteer(double value) {
+    _steer = value * maxVal;
+  }
+
+  void setThrottle(double value) {
+    _throttle = value * maxVal;
+  }
+
   void _sendControls() {
     final msg = '${_thrFilt.round()},${_steerFilt.round()},0';
     _connectionService.send(msg);
