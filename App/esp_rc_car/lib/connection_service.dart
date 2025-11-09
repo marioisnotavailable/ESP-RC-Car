@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 enum ConnectionStatus {
   disconnected,
@@ -18,10 +19,14 @@ enum DiscoveryMethod {
 }
 
 class ConnectionService extends ChangeNotifier {
+  static const _urlKey = 'ws_url';
+
   ConnectionService() {
     _status.addListener(notifyListeners);
-    // Automatically try to connect on startup
-    findAndConnect();
+    _loadUrl().then((_) {
+      // Automatically try to connect on startup with the loaded URL
+      findAndConnect();
+    });
   }
 
   final ValueNotifier<ConnectionStatus> _status =
@@ -43,6 +48,17 @@ class ConnectionService extends ChangeNotifier {
   static const int _discPort = 49352;
   static const String _discQuery = 'ESP_RC_DISCOVER';
   static const String _discRespPrefix = 'ESP_RC_HERE ';
+
+  Future<void> _loadUrl() async {
+    final prefs = await SharedPreferences.getInstance();
+    _wsUrl = prefs.getString(_urlKey) ?? _wsUrl;
+    notifyListeners();
+  }
+
+  Future<void> _saveUrl(String url) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_urlKey, url);
+  }
 
   Future<void> findAndConnect() async {
     if (_status.value == ConnectionStatus.scanning ||
@@ -68,8 +84,8 @@ class ConnectionService extends ChangeNotifier {
       if (foundUrl != null) {
         await connect(foundUrl);
       } else {
-        // If nothing found, try the default URL as a last resort
-        await connect(_wsUrl, isManual: true);
+        // If discovery fails, try connecting to the last known URL
+        await connect(_wsUrl);
       }
     } catch (e) {
       debugPrint('[Discovery] Error: $e');
@@ -85,6 +101,7 @@ class ConnectionService extends ChangeNotifier {
     if (isManual) {
       _discoveryMethod.value = DiscoveryMethod.manual;
     }
+    await _saveUrl(url); // Save the URL
     notifyListeners();
 
     try {
@@ -98,17 +115,16 @@ class ConnectionService extends ChangeNotifier {
           // Handle incoming data if needed
         },
         onDone: () {
-          if (_status.value == ConnectionStatus.connected) {
-            _status.value = ConnectionStatus.disconnected;
-            _scheduleReconnect();
-          }
+          debugPrint('[WS] Disconnected');
+          _disconnect();
+          _scheduleReconnect();
         },
-        onError: (e) {
-          if (_status.value == ConnectionStatus.connected) {
-            _status.value = ConnectionStatus.disconnected;
-            _scheduleReconnect();
-          }
+        onError: (error) {
+          debugPrint('[WS] Error: $error');
+          _disconnect();
+          _scheduleReconnect();
         },
+        cancelOnError: true,
       );
     } catch (e) {
       debugPrint('[WS] Connection to $url failed: $e');
@@ -122,9 +138,8 @@ class ConnectionService extends ChangeNotifier {
       try {
         _socket!.add(data);
       } catch (e) {
-        debugPrint('[WS] Send failed: $e');
-        _status.value = ConnectionStatus.disconnected;
-        _scheduleReconnect();
+        debugPrint('[WS] Send error: $e');
+        _disconnect();
       }
     }
   }
@@ -149,7 +164,7 @@ class ConnectionService extends ChangeNotifier {
     // Only schedule if we were previously connected, to avoid looping on bad URLs
     _reconnectTimer = Timer(const Duration(seconds: 3), () {
        if (_status.value != ConnectionStatus.connected) {
-         connect(_wsUrl);
+        connect(_wsUrl);
        }
     });
   }
@@ -157,11 +172,10 @@ class ConnectionService extends ChangeNotifier {
   Future<String?> _udpDiscoverUrl({int timeoutMs = 1200}) async {
     RawDatagramSocket? sock;
     try {
-      sock = await RawDatagramSocket.bind(InternetAddress.anyIPv4, _discPort,
-          reuseAddress: true);
+      sock = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
       sock.broadcastEnabled = true;
     } catch (e) {
-      debugPrint('[UDP] Bind failed: $e');
+      debugPrint('[UDP] Socket creation failed: $e');
       return null;
     }
 
@@ -171,11 +185,11 @@ class ConnectionService extends ChangeNotifier {
       if (event == RawSocketEvent.read) {
         final dg = sock?.receive();
         if (dg == null) return;
-        final msg = String.fromCharCodes(dg.data);
-        if (msg.startsWith(_discRespPrefix)) {
-          final url = msg.substring(_discRespPrefix.length).trim();
-          if (url.startsWith('ws://') && !completer.isCompleted) {
-            completer.complete(url);
+        final resp = String.fromCharCodes(dg.data);
+        if (resp.startsWith(_discRespPrefix)) {
+          final url = resp.substring(_discRespPrefix.length);
+          if (!completer.isCompleted) {
+            completer.complete('ws://$url:81/');
           }
         }
       }
@@ -188,15 +202,9 @@ class ConnectionService extends ChangeNotifier {
     });
 
     try {
-      final subnets = await _collectLocalSubnets();
-      for (final sn in subnets) {
-        final bcast = _intToIpv4(sn.network | (~sn.mask & 0xFFFFFFFF));
-        sock.send(_discQuery.codeUnits, InternetAddress(bcast), _discPort);
-      }
-      sock.send(
-          _discQuery.codeUnits, InternetAddress('255.255.255.255'), _discPort);
+      sock.send(_discQuery.codeUnits, InternetAddress('255.255.255.255'), _discPort);
     } catch (e) {
-      debugPrint('[UDP] Broadcast send failed: $e');
+      debugPrint('[UDP] Broadcast failed: $e');
     }
 
     final result = await completer.future;
@@ -211,11 +219,11 @@ class ConnectionService extends ChangeNotifier {
 
     final candidates = <InternetAddress>{};
     for (final sn in subnets) {
-      final start = (sn.network | 1);
-      final end = (sn.network | (~sn.mask & 0xFFFFFFFF)) - 1;
+      final start = (sn.network & sn.mask) + 1;
+      final end = (sn.network | ~sn.mask) - 1;
       for (var i = start; i <= end; i++) {
-        if (_intToIpv4(i) == sn.selfIp) continue;
-        candidates.add(InternetAddress(_intToIpv4(i)));
+        final ip = _intToIpv4(i);
+        if (ip != sn.selfIp) candidates.add(InternetAddress(ip));
       }
     }
 
@@ -225,8 +233,8 @@ class ConnectionService extends ChangeNotifier {
     final List<Future<void>> checks = [];
 
     for (final addr in candidates) {
-      final check = _probeHost(addr, timeoutMs: 800).then((found) {
-        if (found && !completer.isCompleted) {
+      final check = _probeHost(addr).then((ok) {
+        if (ok && !completer.isCompleted) {
           completer.complete('ws://${addr.address}:81/');
         }
       });
@@ -237,11 +245,11 @@ class ConnectionService extends ChangeNotifier {
     try {
         await Future.wait(checks).timeout(Duration(milliseconds: timeoutMs));
     } catch (_) {
-        // Timeout is expected if a host is found early
+        // This is expected if we time out before all probes complete
     }
 
     if (!completer.isCompleted) {
-        completer.complete(null);
+      completer.complete(null);
     }
 
     return completer.future;
@@ -249,9 +257,8 @@ class ConnectionService extends ChangeNotifier {
 
   Future<bool> _probeHost(InternetAddress addr, {int timeoutMs = 800}) async {
     try {
-      final s = await Socket.connect(addr, 81,
-          timeout: Duration(milliseconds: timeoutMs));
-      s.destroy();
+      final s = await Socket.connect(addr, 81, timeout: Duration(milliseconds: timeoutMs));
+      await s.close();
       return true;
     } catch (_) {
       return false;
@@ -261,38 +268,26 @@ class ConnectionService extends ChangeNotifier {
   Future<List<_Subnet>> _collectLocalSubnets() async {
     final out = <_Subnet>[];
     try {
-      final ifs = await NetworkInterface.list(
-          includeLoopback: false, type: InternetAddressType.IPv4);
-      for (final iface in ifs) {
-        // The 'addresses' property of NetworkInterface is a list of InternetAddress,
-        // which doesn't include the prefix length. We need to look at the raw address
-        // data to determine the subnet. However, for the sake of broad compatibility
-        // and given that we are targeting consumer networking environments, assuming
-        // a /24 subnet is a reasonable and effective heuristic.
-        for (final addr in iface.addresses) {
-          final ip = addr.address;
-          if (ip.startsWith('169.254.')) continue; // Ignore link-local
-
-          if (ip.startsWith('192.168.') ||
-              ip.startsWith('10.') ||
-              (ip.startsWith('172.') &&
-                  (int.parse(ip.split('.')[1]) >= 16 &&
-                      int.parse(ip.split('.')[1]) <= 31))) {
-            
-            // Heuristic: Assume a /24 subnet for simplicity. This is the most
-            // common configuration for home and small office networks.
-            const prefix = 24;
-            final mask = (~((1 << (32 - prefix)) - 1)) & 0xFFFFFFFF;
-            final network = _ipv4ToInt(ip) & mask;
-
-            if (!out.any((s) => s.network == network)) {
-              out.add(_Subnet(network, mask, prefix, ip));
-            }
+      final interfaces = await NetworkInterface.list(
+        includeLoopback: false,
+        type: InternetAddressType.IPv4,
+      );
+      for (final i in interfaces) {
+        for (final a in i.addresses) {
+          // Poor man's subnet mask calculation. Assumes /24 for private IPs.
+          // This is not robust but works for most home networks.
+          if (a.address.startsWith('192.168.') ||
+              a.address.startsWith('10.') ||
+              a.address.startsWith('172.')) {
+            final ipInt = _ipv4ToInt(a.address);
+            const maskInt = 0xFFFFFF00; // /24
+            final netInt = ipInt & maskInt;
+            out.add(_Subnet(netInt, maskInt, 24, a.address));
           }
         }
       }
     } catch (e) {
-      debugPrint('[Subnet] Error collecting subnets: $e');
+      debugPrint('[Net] Could not list interfaces: $e');
     }
     return out;
   }
