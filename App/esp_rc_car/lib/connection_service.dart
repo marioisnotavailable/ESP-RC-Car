@@ -70,10 +70,8 @@ class ConnectionService extends ChangeNotifier {
   }
 
   Future<void> findAndConnect() async {
-    if (_status.value == ConnectionStatus.scanning) {
-      stopScan();
-      return;
-    }
+    if (_status.value == ConnectionStatus.scanning ||
+        _status.value == ConnectionStatus.connecting) return;
 
     _status.value = ConnectionStatus.scanning;
     _scanCancelled = false;
