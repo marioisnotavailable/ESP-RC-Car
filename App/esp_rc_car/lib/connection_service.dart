@@ -66,66 +66,81 @@ class ConnectionService extends ChangeNotifier {
   void stopScan() {
     if (_status.value == ConnectionStatus.scanning) {
       _scanCancelled = true;
+      _status.value = ConnectionStatus.disconnected;
     }
   }
 
-  Future<void> findAndConnect() async {
+  Future<void> findAndConnect({bool withLastKnown = true}) async {
     if (_status.value == ConnectionStatus.scanning ||
-        _status.value == ConnectionStatus.connecting) return;
+        _status.value == ConnectionStatus.connecting) {
+      if (_status.value == ConnectionStatus.scanning) {
+        stopScan();
+      }
+      return;
+    }
 
     _status.value = ConnectionStatus.scanning;
+    notifyListeners();
     _scanCancelled = false;
     _discoveryMethod.value = DiscoveryMethod.none;
     _disconnect(quiet: true);
 
     try {
-      // 1. Try to connect to the last known URL first
-      try {
-        await connect(_wsUrl, timeout: const Duration(seconds: 2));
-        if (_status.value == ConnectionStatus.connected) {
-          _discoveryMethod.value = DiscoveryMethod.lastKnown;
+      // 1. Optionally, try to connect to the last known URL first
+      if (withLastKnown) {
+        try {
+          // Use a shorter timeout for the initial check
+          await connect(_wsUrl, timeout: const Duration(seconds: 2));
+          if (_status.value == ConnectionStatus.connected) {
+            _discoveryMethod.value = DiscoveryMethod.lastKnown;
+            return;
+          }
+        } catch (_) {
+          // Ignore timeout or connection errors, proceed to discovery
+        }
+      }
+
+      // If still scanning (i.e., last known failed or was skipped)
+      if (_status.value == ConnectionStatus.scanning) {
+        if (_scanCancelled) {
+          _status.value = ConnectionStatus.disconnected;
           return;
         }
-      } catch (_) {
-        // Ignore timeout or connection errors, proceed to discovery
-      }
 
-      if (_scanCancelled) {
-        _status.value = ConnectionStatus.disconnected;
-        return;
-      }
-
-      // 2. Try UDP discovery
-      String? foundUrl = await _udpDiscoverUrl(timeoutMs: 1500);
-      if (_scanCancelled) {
-        _status.value = ConnectionStatus.disconnected;
-        return;
-      }
-      if (foundUrl != null) {
-        _discoveryMethod.value = DiscoveryMethod.udp;
-      }
-
-      // 3. Fallback to TCP scan if UDP fails
-      if (foundUrl == null) {
-        foundUrl = await _tcpDiscoverUrl();
+        // 2. Try UDP discovery
+        String? foundUrl = await _udpDiscoverUrl(timeoutMs: 1500);
         if (_scanCancelled) {
           _status.value = ConnectionStatus.disconnected;
           return;
         }
         if (foundUrl != null) {
-          _discoveryMethod.value = DiscoveryMethod.tcp;
+          _discoveryMethod.value = DiscoveryMethod.udp;
         }
-      }
 
-      // 4. Connect to the URL found by discovery
-      if (foundUrl != null) {
-        await connect(foundUrl);
-      } else {
-        _status.value = ConnectionStatus.disconnected;
+        // 3. Fallback to TCP scan if UDP fails
+        if (foundUrl == null) {
+          foundUrl = await _tcpDiscoverUrl();
+          if (_scanCancelled) {
+            _status.value = ConnectionStatus.disconnected;
+            return;
+          }
+          if (foundUrl != null) {
+            _discoveryMethod.value = DiscoveryMethod.tcp;
+          }
+        }
+
+        // 4. Connect to the URL found by discovery
+        if (foundUrl != null) {
+          await connect(foundUrl);
+        } else {
+          _status.value = ConnectionStatus.disconnected;
+        }
       }
     } catch (e) {
       debugPrint('[Discovery] Error: $e');
-      _status.value = ConnectionStatus.disconnected;
+      if (_status.value != ConnectionStatus.connected) {
+        _status.value = ConnectionStatus.disconnected;
+      }
     }
   }
 

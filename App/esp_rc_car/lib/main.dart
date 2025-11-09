@@ -88,11 +88,9 @@ class _ControllerPageState extends State<ControllerPage> {
                           externalValue:
                               Offset(0, controller.throttle / ControllerService.maxVal),
                           sensitivity: 0.6,
-                          onChanged: (offset) => controller.setControls(
-                              controller.steer / ControllerService.maxVal,
-                              offset.dy * ControllerService.maxVal),
-                          onEnd: () => controller.setControls(
-                              controller.steer / ControllerService.maxVal, 0),
+                          onChanged: (offset) =>
+                              controller.setThrottle(offset.dy),
+                          onEnd: () => controller.setThrottle(0),
                         ),
                       ),
                       Align(
@@ -104,11 +102,8 @@ class _ControllerPageState extends State<ControllerPage> {
                           externalValue:
                               Offset(controller.steer / ControllerService.maxVal, 0),
                           sensitivity: 0.6,
-                          onChanged: (offset) => controller.setControls(
-                              offset.dx * ControllerService.maxVal,
-                              controller.throttle / ControllerService.maxVal),
-                          onEnd: () => controller.setControls(
-                              0, controller.throttle / ControllerService.maxVal),
+                          onChanged: (offset) => controller.setSteer(offset.dx),
+                          onEnd: () => controller.setSteer(0),
                         ),
                       ),
                     ],
