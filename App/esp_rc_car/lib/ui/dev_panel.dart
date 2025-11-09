@@ -99,7 +99,6 @@ class _DevPanelState extends State<DevPanel> {
                 const Spacer(),
             ],
           ),
-          if (widget.isExpanded) const ConnectionStatusView(),
         ],
       ),
     );

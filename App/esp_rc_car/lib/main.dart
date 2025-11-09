@@ -160,9 +160,11 @@ class _ControllerPageState extends State<ControllerPage> {
                 isExpanded: _showDevPanel,
                 onToggle: () => setState(() => _showDevPanel = !_showDevPanel),
               ),
+              const SizedBox(height: 16),
               Expanded(
                 child: Stack(
                   children: [
+                    if (_showDevPanel) const ConnectionStatusView(),
                     if (!_gamepadConnected) ...[
                       Align(
                         alignment: const Alignment(-0.98, 0.6),
