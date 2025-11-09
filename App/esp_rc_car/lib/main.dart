@@ -150,6 +150,7 @@ class _ControllerPageState extends State<ControllerPage> {
     final knobSize = isSmallScreen ? 100.0 : 120.0;
 
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       body: SafeArea(
         child: GestureDetector(
           onTap: () => FocusScope.of(context).unfocus(),
