@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:network_info_plus/network_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 enum ConnectionStatus {
@@ -16,10 +17,12 @@ enum DiscoveryMethod {
   udp,
   tcp,
   manual,
+  lastKnown,
 }
 
 class ConnectionService extends ChangeNotifier {
   static const _urlKey = 'ws_url';
+  bool _scanCancelled = false;
 
   ConnectionService() {
     _status.addListener(notifyListeners);
@@ -60,32 +63,67 @@ class ConnectionService extends ChangeNotifier {
     await prefs.setString(_urlKey, url);
   }
 
+  void stopScan() {
+    if (_status.value == ConnectionStatus.scanning) {
+      _scanCancelled = true;
+    }
+  }
+
   Future<void> findAndConnect() async {
-    if (_status.value == ConnectionStatus.scanning ||
-        _status.value == ConnectionStatus.connecting) return;
+    if (_status.value == ConnectionStatus.scanning) {
+      stopScan();
+      return;
+    }
 
     _status.value = ConnectionStatus.scanning;
+    _scanCancelled = false;
     _discoveryMethod.value = DiscoveryMethod.none;
     _disconnect(quiet: true);
 
     try {
-      // Try UDP discovery first
+      // 1. Try to connect to the last known URL first
+      try {
+        await connect(_wsUrl, timeout: const Duration(seconds: 2));
+        if (_status.value == ConnectionStatus.connected) {
+          _discoveryMethod.value = DiscoveryMethod.lastKnown;
+          return;
+        }
+      } catch (_) {
+        // Ignore timeout or connection errors, proceed to discovery
+      }
+
+      if (_scanCancelled) {
+        _status.value = ConnectionStatus.disconnected;
+        return;
+      }
+
+      // 2. Try UDP discovery
       String? foundUrl = await _udpDiscoverUrl(timeoutMs: 1500);
+      if (_scanCancelled) {
+        _status.value = ConnectionStatus.disconnected;
+        return;
+      }
       if (foundUrl != null) {
         _discoveryMethod.value = DiscoveryMethod.udp;
       }
 
-      // Fallback to TCP scan if UDP fails
-      foundUrl ??= await _tcpDiscoverUrl(timeoutMs: 4000);
-      if (foundUrl != null && _discoveryMethod.value == DiscoveryMethod.none) {
-        _discoveryMethod.value = DiscoveryMethod.tcp;
+      // 3. Fallback to TCP scan if UDP fails
+      if (foundUrl == null) {
+        foundUrl = await _tcpDiscoverUrl();
+        if (_scanCancelled) {
+          _status.value = ConnectionStatus.disconnected;
+          return;
+        }
+        if (foundUrl != null) {
+          _discoveryMethod.value = DiscoveryMethod.tcp;
+        }
       }
 
+      // 4. Connect to the URL found by discovery
       if (foundUrl != null) {
         await connect(foundUrl);
       } else {
-        // If discovery fails, try connecting to the last known URL
-        await connect(_wsUrl);
+        _status.value = ConnectionStatus.disconnected;
       }
     } catch (e) {
       debugPrint('[Discovery] Error: $e');
@@ -93,7 +131,7 @@ class ConnectionService extends ChangeNotifier {
     }
   }
 
-  Future<void> connect(String url, {bool isManual = false}) async {
+  Future<void> connect(String url, {bool isManual = false, Duration? timeout}) async {
     if (_status.value == ConnectionStatus.connecting && url == _wsUrl) return;
 
     _status.value = ConnectionStatus.connecting;
@@ -106,7 +144,7 @@ class ConnectionService extends ChangeNotifier {
 
     try {
       _disconnect(quiet: true);
-      _socket = await WebSocket.connect(url).timeout(const Duration(seconds: 4));
+      _socket = await WebSocket.connect(url).timeout(timeout ?? const Duration(seconds: 4));
       _status.value = ConnectionStatus.connected;
       debugPrint('[WS] Connected to $url');
 
@@ -129,7 +167,8 @@ class ConnectionService extends ChangeNotifier {
     } catch (e) {
       debugPrint('[WS] Connection to $url failed: $e');
       _status.value = ConnectionStatus.disconnected;
-      _scheduleReconnect();
+      // Re-throw the exception so the caller can handle it (e.g., in findAndConnect)
+      throw e;
     }
   }
 
@@ -182,6 +221,7 @@ class ConnectionService extends ChangeNotifier {
     final completer = Completer<String?>();
     late StreamSubscription sub;
     sub = sock.listen((event) {
+      if (_scanCancelled) return;
       if (event == RawSocketEvent.read) {
         final dg = sock?.receive();
         if (dg == null) return;
@@ -213,49 +253,49 @@ class ConnectionService extends ChangeNotifier {
     return result;
   }
 
-  Future<String?> _tcpDiscoverUrl({int timeoutMs = 4000}) async {
+  Future<String?> _tcpDiscoverUrl() async {
     final subnets = await _collectLocalSubnets();
     if (subnets.isEmpty) return null;
 
-    final candidates = <InternetAddress>{};
+    final completer = Completer<String?>();
+    List<Future<void>> checks = [];
+
     for (final sn in subnets) {
+      if (_scanCancelled) break;
       final start = (sn.network & sn.mask) + 1;
       final end = (sn.network | ~sn.mask) - 1;
       for (var i = start; i <= end; i++) {
+        if (_scanCancelled) break;
         final ip = _intToIpv4(i);
-        if (ip != sn.selfIp) candidates.add(InternetAddress(ip));
+        if (ip == sn.selfIp) continue;
+
+        final addr = InternetAddress(ip);
+        final check = _probeHost(addr).then((ok) {
+          if (ok && !completer.isCompleted) {
+            completer.complete('ws://${addr.address}:81/');
+          }
+        });
+        checks.add(check);
       }
     }
 
-    if (candidates.isEmpty) return null;
-
-    final completer = Completer<String?>();
-    final List<Future<void>> checks = [];
-
-    for (final addr in candidates) {
-      final check = _probeHost(addr).then((ok) {
-        if (ok && !completer.isCompleted) {
-          completer.complete('ws://${addr.address}:81/');
-        }
-      });
-      checks.add(check);
-    }
-    
-    // Wait for all probes or a timeout
-    try {
-        await Future.wait(checks).timeout(Duration(milliseconds: timeoutMs));
-    } catch (_) {
-        // This is expected if we time out before all probes complete
+    if (_scanCancelled) {
+      if (!completer.isCompleted) completer.complete(null);
+      return completer.future;
     }
 
-    if (!completer.isCompleted) {
-      completer.complete(null);
-    }
+    // Wait for all probes to finish.
+    Future.wait(checks).then((_) {
+      if (!completer.isCompleted) {
+        completer.complete(null);
+      }
+    });
 
     return completer.future;
   }
 
   Future<bool> _probeHost(InternetAddress addr, {int timeoutMs = 800}) async {
+    if (_scanCancelled) return false;
     try {
       final s = await Socket.connect(addr, 81, timeout: Duration(milliseconds: timeoutMs));
       await s.close();
@@ -267,27 +307,29 @@ class ConnectionService extends ChangeNotifier {
 
   Future<List<_Subnet>> _collectLocalSubnets() async {
     final out = <_Subnet>[];
+    final networkInfo = NetworkInfo();
+
     try {
-      final interfaces = await NetworkInterface.list(
-        includeLoopback: false,
-        type: InternetAddressType.IPv4,
-      );
-      for (final i in interfaces) {
-        for (final a in i.addresses) {
-          // Poor man's subnet mask calculation. Assumes /24 for private IPs.
-          // This is not robust but works for most home networks.
-          if (a.address.startsWith('192.168.') ||
-              a.address.startsWith('10.') ||
-              a.address.startsWith('172.')) {
-            final ipInt = _ipv4ToInt(a.address);
-            const maskInt = 0xFFFFFF00; // /24
-            final netInt = ipInt & maskInt;
-            out.add(_Subnet(netInt, maskInt, 24, a.address));
-          }
+      final ip = await networkInfo.getWifiIP();
+      final subnet = await networkInfo.getWifiSubmask();
+
+      if (ip != null && subnet != null) {
+        final ipInt = _ipv4ToInt(ip);
+        final maskInt = _ipv4ToInt(subnet);
+        final netInt = ipInt & maskInt;
+        
+        // Calculate prefix from mask
+        int prefix = 0;
+        int m = maskInt;
+        while (m > 0) {
+          m = (m << 1) & 0xFFFFFFFF;
+          prefix++;
         }
+
+        out.add(_Subnet(netInt, maskInt, prefix, ip));
       }
     } catch (e) {
-      debugPrint('[Net] Could not list interfaces: $e');
+      debugPrint('[Net] Could not get network info: $e');
     }
     return out;
   }
