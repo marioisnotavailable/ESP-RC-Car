@@ -144,7 +144,8 @@ class ConnectionStatusView extends StatelessWidget {
         statusColor = Colors.red;
         break;
       case ConnectionStatus.scanning:
-        statusText = 'Scanning...';
+        final scanMethod = connectionService.discoveryMethod;
+        statusText = 'Scanning${_scanMethodText(scanMethod)}...';
         statusColor = Colors.orange;
         break;
       case ConnectionStatus.connecting:
@@ -160,22 +161,7 @@ class ConnectionStatusView extends StatelessWidget {
     String methodText = '';
     if (status == ConnectionStatus.connected) {
       final method = connectionService.discoveryMethod;
-      switch (method) {
-        case DiscoveryMethod.udp:
-          methodText = ' (UDP)';
-          break;
-        case DiscoveryMethod.tcp:
-          methodText = ' (TCP)';
-          break;
-        case DiscoveryMethod.manual:
-          methodText = ' (Manual)';
-          break;
-        case DiscoveryMethod.lastKnown:
-          methodText = ' (Last Known)';
-          break;
-        case DiscoveryMethod.none:
-          break;
-      }
+      methodText = _scanMethodText(method);
     }
 
     return Padding(
@@ -189,7 +175,7 @@ class ConnectionStatusView extends StatelessWidget {
             'WS: $statusText',
             style: TextStyle(color: statusColor, fontSize: 13),
           ),
-          if (methodText.isNotEmpty)
+          if (methodText.isNotEmpty && status == ConnectionStatus.connected)
             Text(
               methodText,
               style: TextStyle(color: Colors.grey[400], fontSize: 13),
@@ -197,6 +183,21 @@ class ConnectionStatusView extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String _scanMethodText(DiscoveryMethod method) {
+    switch (method) {
+      case DiscoveryMethod.udp:
+        return ' (UDP)';
+      case DiscoveryMethod.tcp:
+        return ' (TCP)';
+      case DiscoveryMethod.manual:
+        return ' (Manual)';
+      case DiscoveryMethod.lastKnown:
+        return ' (Last Known)';
+      case DiscoveryMethod.none:
+        return '';
+    }
   }
 }
 
