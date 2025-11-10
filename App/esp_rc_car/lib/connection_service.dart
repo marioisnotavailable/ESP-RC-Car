@@ -8,12 +8,16 @@ enum ConnectionStatus { disconnected, scanning, connecting, connected }
 
 enum DiscoveryMethod { none, udp, tcp, manual, lastKnown }
 
+enum DiscoveryStrategy { udpFirst, udpOnly, tcpOnly }
+
 class ConnectionService extends ChangeNotifier {
   static const _urlKey = 'ws_url';
+  static const _discoveryStrategyKey = 'discovery_strategy';
 
   // --- Private State ---
   ConnectionStatus _status = ConnectionStatus.disconnected;
   DiscoveryMethod _discoveryMethod = DiscoveryMethod.none;
+  DiscoveryStrategy _discoveryStrategy = DiscoveryStrategy.udpFirst;
   WebSocket? _socket;
   String _wsUrl = 'ws://192.168.4.1:81/';
   Timer? _reconnectTimer;
@@ -27,6 +31,7 @@ class ConnectionService extends ChangeNotifier {
   // --- Public Getters ---
   ConnectionStatus get status => _status;
   DiscoveryMethod get discoveryMethod => _discoveryMethod;
+  DiscoveryStrategy get discoveryStrategy => _discoveryStrategy;
   WebSocket? get socket => _socket;
   String get wsUrl => _wsUrl;
 
@@ -35,6 +40,7 @@ class ConnectionService extends ChangeNotifier {
       // Automatically try to connect on startup with the loaded URL
       findAndConnect();
     });
+    _loadDiscoveryStrategy();
   }
 
   Future<void> _loadUrl() async {
@@ -44,6 +50,29 @@ class ConnectionService extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       debugPrint('[Prefs] Failed to load URL: $e');
+    }
+  }
+
+  Future<void> _loadDiscoveryStrategy() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final strategyIndex = prefs.getInt(_discoveryStrategyKey) ?? 0;
+      _discoveryStrategy = DiscoveryStrategy.values[strategyIndex];
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[Prefs] Failed to load discovery strategy: $e');
+    }
+  }
+
+  Future<void> setDiscoveryStrategy(DiscoveryStrategy strategy) async {
+    if (_discoveryStrategy == strategy) return;
+    _discoveryStrategy = strategy;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_discoveryStrategyKey, strategy.index);
+    } catch (e) {
+      debugPrint('[Prefs] Failed to save discovery strategy: $e');
     }
   }
 
@@ -100,26 +129,32 @@ class ConnectionService extends ChangeNotifier {
       if (_scanCompleter?.isCompleted ?? false) return;
 
       // 2. UDP Discovery
-      debugPrint('[Discovery] Starting UDP discovery...');
-      foundUrl = await _udpDiscoverUrl(timeoutMs: 2000);
-      if (foundUrl != null) {
-        debugPrint('[Discovery] UDP found: $foundUrl');
-        if (await _tryConnect(foundUrl)) {
-          _updateStatus(ConnectionStatus.connected, DiscoveryMethod.udp);
-          return; // Success
+      if (_discoveryStrategy == DiscoveryStrategy.udpFirst ||
+          _discoveryStrategy == DiscoveryStrategy.udpOnly) {
+        debugPrint('[Discovery] Starting UDP discovery...');
+        foundUrl = await _udpDiscoverUrl(timeoutMs: 2000);
+        if (foundUrl != null) {
+          debugPrint('[Discovery] UDP found: $foundUrl');
+          if (await _tryConnect(foundUrl)) {
+            _updateStatus(ConnectionStatus.connected, DiscoveryMethod.udp);
+            return; // Success
+          }
         }
       }
 
       if (_scanCompleter?.isCompleted ?? false) return;
 
       // 3. TCP Subnet Scan
-      debugPrint('[Discovery] Starting TCP subnet scan...');
-      foundUrl = await _tcpDiscoverUrl();
-      if (foundUrl != null) {
-        debugPrint('[Discovery] TCP scan found: $foundUrl');
-        if (await _tryConnect(foundUrl)) {
-          _updateStatus(ConnectionStatus.connected, DiscoveryMethod.tcp);
-          return; // Success
+      if (_discoveryStrategy == DiscoveryStrategy.udpFirst ||
+          _discoveryStrategy == DiscoveryStrategy.tcpOnly) {
+        debugPrint('[Discovery] Starting TCP subnet scan...');
+        foundUrl = await _tcpDiscoverUrl();
+        if (foundUrl != null) {
+          debugPrint('[Discovery] TCP scan found: $foundUrl');
+          if (await _tryConnect(foundUrl)) {
+            _updateStatus(ConnectionStatus.connected, DiscoveryMethod.tcp);
+            return; // Success
+          }
         }
       }
 
