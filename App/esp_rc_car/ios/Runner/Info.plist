@@ -28,8 +28,6 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>This app needs to scan the local network to find and connect to the ESP32 RC car.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
@@ -47,9 +45,11 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-
-	<!-- iOS 14+ Local Network privacy: allow UDP discovery on LAN -->
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Allow local network access to discover and connect to your ESP RC Car.</string>
+    <string>This app needs to scan the local network to find and connect to the ESP32 RC car.</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_esp-rc-car._udp</string>
+    </array>
 </dict>
 </plist>
