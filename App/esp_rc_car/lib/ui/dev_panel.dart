@@ -18,6 +18,7 @@ class DevPanel extends StatefulWidget {
 
 class _DevPanelState extends State<DevPanel> {
   late final TextEditingController _wsUrlController;
+  late final FocusNode _focusNode;
   late ConnectionService _connectionService;
 
   @override
@@ -25,30 +26,28 @@ class _DevPanelState extends State<DevPanel> {
     super.initState();
     _connectionService = context.read<ConnectionService>();
     _wsUrlController = TextEditingController(text: _connectionService.wsUrl);
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // If the URL in the service changes (e.g., from auto-discovery),
-    // update the text field, but only if the user isn't currently focused on it.
-    if (!FocusScope.of(context).hasFocus) {
-      final newUrl = context.watch<ConnectionService>().wsUrl;
-      if (_wsUrlController.text != newUrl) {
-        _wsUrlController.text = newUrl;
-      }
-    }
+    _focusNode = FocusNode();
   }
 
   @override
   void dispose() {
     _wsUrlController.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final connectionService = context.watch<ConnectionService>();
+
+    // If the URL in the service changes (e.g., from auto-discovery),
+    // update the text field, but only if the user isn't currently focused on it.
+    if (!_focusNode.hasFocus) {
+      final newUrl = connectionService.wsUrl;
+      if (_wsUrlController.text != newUrl) {
+        _wsUrlController.text = newUrl;
+      }
+    }
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
@@ -70,6 +69,7 @@ class _DevPanelState extends State<DevPanel> {
                     children: [
                       Expanded(
                         child: TextField(
+                          focusNode: _focusNode,
                           controller: _wsUrlController,
                           style: const TextStyle(color: Color(0xFF99AADD)),
                           decoration: const InputDecoration(
@@ -91,14 +91,14 @@ class _DevPanelState extends State<DevPanel> {
                       ElevatedButton(
                         onPressed: () {
                           final service = context.read<ConnectionService>();
-                          if (service.status.value == ConnectionStatus.scanning) {
+                          if (service.status == ConnectionStatus.scanning) {
                             service.stopScan();
                           } else {
                             service.findAndConnect(withLastKnown: false);
                           }
                         },
                         child: Text(
-                          connectionService.status.value == ConnectionStatus.scanning
+                          connectionService.status == ConnectionStatus.scanning
                               ? 'Stop'
                               : 'Search',
                         ),
@@ -122,70 +122,67 @@ class ConnectionStatusView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final connectionService = context.watch<ConnectionService>();
+    final status = connectionService.status;
+
+    String statusText;
+    Color statusColor;
+    switch (status) {
+      case ConnectionStatus.disconnected:
+        statusText = 'Disconnected';
+        statusColor = Colors.red;
+        break;
+      case ConnectionStatus.scanning:
+        statusText = 'Scanning...';
+        statusColor = Colors.orange;
+        break;
+      case ConnectionStatus.connecting:
+        statusText = 'Connecting...';
+        statusColor = Colors.yellow;
+        break;
+      case ConnectionStatus.connected:
+        statusText = 'Connected';
+        statusColor = Colors.green;
+        break;
+    }
+
+    String methodText = '';
+    if (status == ConnectionStatus.connected) {
+      final method = connectionService.discoveryMethod;
+      switch (method) {
+        case DiscoveryMethod.udp:
+          methodText = ' (UDP)';
+          break;
+        case DiscoveryMethod.tcp:
+          methodText = ' (TCP)';
+          break;
+        case DiscoveryMethod.manual:
+          methodText = ' (Manual)';
+          break;
+        case DiscoveryMethod.lastKnown:
+          methodText = ' (Last Known)';
+          break;
+        case DiscoveryMethod.none:
+          break;
+      }
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-      child: ValueListenableBuilder<ConnectionStatus>(
-        valueListenable: connectionService.status,
-        builder: (context, status, child) {
-          String statusText;
-          Color statusColor;
-          switch (status) {
-            case ConnectionStatus.disconnected:
-              statusText = 'Disconnected';
-              statusColor = Colors.red;
-              break;
-            case ConnectionStatus.scanning:
-              statusText = 'Scanning...';
-              statusColor = Colors.orange;
-              break;
-            case ConnectionStatus.connecting:
-              statusText = 'Connecting...';
-              statusColor = Colors.yellow;
-              break;
-            case ConnectionStatus.connected:
-              statusText = 'Connected';
-              statusColor = Colors.green;
-              break;
-          }
-          return Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.circle, color: statusColor, size: 12),
-              const SizedBox(width: 8),
-              Text(
-                'WS: $statusText',
-                style: TextStyle(color: statusColor, fontSize: 13),
-              ),
-              if (status == ConnectionStatus.connected)
-                ValueListenableBuilder<DiscoveryMethod>(
-                  valueListenable: connectionService.discoveryMethod,
-                  builder: (context, method, child) {
-                    String methodText = '';
-                    switch (method) {
-                      case DiscoveryMethod.udp:
-                        methodText = ' (UDP)';
-                        break;
-                      case DiscoveryMethod.tcp:
-                        methodText = ' (TCP)';
-                        break;
-                      case DiscoveryMethod.manual:
-                        methodText = ' (Manual)';
-                        break;
-                      case DiscoveryMethod.lastKnown:
-                        methodText = ' (Last Known)';
-                        break;
-                      case DiscoveryMethod.none:
-                        break;
-                    }
-                    return Text(
-                      methodText,
-                      style: TextStyle(color: Colors.grey[400], fontSize: 13),
-                    );
-                  },
-                ),
-            ],
-          );
-        },
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.circle, color: statusColor, size: 12),
+          const SizedBox(width: 8),
+          Text(
+            'WS: $statusText',
+            style: TextStyle(color: statusColor, fontSize: 13),
+          ),
+          if (methodText.isNotEmpty)
+            Text(
+              methodText,
+              style: TextStyle(color: Colors.grey[400], fontSize: 13),
+            ),
+        ],
       ),
     );
   }
