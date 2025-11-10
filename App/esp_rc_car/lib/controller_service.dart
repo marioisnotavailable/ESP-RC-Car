@@ -69,42 +69,50 @@ class ControllerService extends ChangeNotifier {
   }
 
   void _subscribeToGamepad() {
-    _gpSub = _gamepadChannel.receiveBroadcastStream().listen((event) {
-      if (event is! Map) return;
+    _gpSub = _gamepadChannel.receiveBroadcastStream().listen(
+      (event) {
+        if (event is! Map) return;
 
-      final bool connected = event['connected'] ?? false;
-      if (_gamepadConnected != connected) {
-        _gamepadConnected = connected;
-        notifyListeners();
-      }
+        final bool connected = event['connected'] ?? false;
+        if (_gamepadConnected != connected) {
+          _gamepadConnected = connected;
+          notifyListeners();
+        }
 
-      if (connected) {
-        final lx = (event['lx'] as num?)?.toDouble() ?? 0.0;
-        final r2 = (event['r2'] as num?)?.toDouble() ?? 0.0;
-        final l2 = (event['l2'] as num?)?.toDouble() ?? 0.0;
+        if (connected) {
+          final lx = (event['lx'] as num?)?.toDouble() ?? 0.0;
+          final r2 = (event['r2'] as num?)?.toDouble() ?? 0.0;
+          final l2 = (event['l2'] as num?)?.toDouble() ?? 0.0;
 
-        final steerAxis = _applyDeadzone(lx);
-        final thrAxis = (r2 - l2).clamp(-1.0, 1.0);
+          final steerAxis = _applyDeadzone(lx);
+          final thrAxis = (r2 - l2).clamp(-1.0, 1.0);
 
-        _steer = steerAxis * maxVal;
-        _throttle = thrAxis * maxVal;
-      } else {
-        _steer = 0;
-        _throttle = 0;
-      }
-    }, onError: (_) {
-      if (_gamepadConnected) {
-        _gamepadConnected = false;
-        notifyListeners();
-      }
-    });
+          _steer = steerAxis * maxVal;
+          _throttle = thrAxis * maxVal;
+        } else {
+          _steer = 0;
+          _throttle = 0;
+        }
+      },
+      onError: (_) {
+        if (_gamepadConnected) {
+          _gamepadConnected = false;
+          notifyListeners();
+        }
+      },
+    );
   }
 
   void _startControlLoop() {
-    _loop = Timer.periodic(Duration(milliseconds: (1000 / sendHz).round()), (_) {
+    _loop = Timer.periodic(Duration(milliseconds: (1000 / sendHz).round()), (
+      _,
+    ) {
       // Apply smoothing filters
-      _steerFilt = steerFilterAlpha * _steerFilt + (1 - steerFilterAlpha) * _steer;
-      _thrFilt = throttleFilterAlpha * _thrFilt + (1 - throttleFilterAlpha) * _throttle;
+      _steerFilt =
+          steerFilterAlpha * _steerFilt + (1 - steerFilterAlpha) * _steer;
+      _thrFilt =
+          throttleFilterAlpha * _thrFilt +
+          (1 - throttleFilterAlpha) * _throttle;
 
       // Clamp values to ensure they are within the expected range
       _steerFilt = _steerFilt.clamp(-maxVal.toDouble(), maxVal.toDouble());
