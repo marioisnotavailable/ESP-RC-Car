@@ -350,6 +350,19 @@ class ConnectionService extends ChangeNotifier {
     final completer = Completer<String?>();
     final checks = <Future<void>>[];
 
+    // Set an overall timeout for the TCP scan
+    final scanTimeout = Timer(const Duration(seconds: 10), () {
+      if (!completer.isCompleted) {
+        debugPrint('[Discovery] TCP scan timed out.');
+        completer.complete(null);
+      }
+    });
+
+    // Stop if the user cancels the scan
+    _scanCompleter?.future.then((_) {
+      if (!completer.isCompleted) completer.complete(null);
+    });
+
     for (final sn in subnets) {
       final start = (sn.network & sn.mask) + 1;
       final end = (sn.network | ~sn.mask) - 1;
@@ -368,17 +381,16 @@ class ConnectionService extends ChangeNotifier {
       }
     }
 
-    // Stop if scan is cancelled
-    _scanCompleter?.future.then((_) {
-      if (!completer.isCompleted) completer.complete(null);
-    });
-
-    // Wait for all probes to finish or for one to succeed.
+    // Wait for all probes to finish. If none have succeeded by then, complete with null.
     Future.wait(checks).then((_) {
-      if (!completer.isCompleted) completer.complete(null);
+      if (!completer.isCompleted) {
+        completer.complete(null);
+      }
     });
 
-    return completer.future;
+    final result = await completer.future;
+    scanTimeout.cancel(); // Clean up the timer
+    return result;
   }
 
   Future<bool> _probeHost(InternetAddress addr, {int timeoutMs = 800}) async {
