@@ -347,7 +347,12 @@ class ConnectionService extends ChangeNotifier {
 
   Future<String?> _tcpDiscoverUrl() async {
     final subnets = await _collectLocalSubnets();
-    if (subnets.isEmpty) return null;
+    if (subnets.isEmpty) {
+      debugPrint('[Discovery] TCP scan failed: No local subnets found. (Is Wi-Fi on?)');
+      return null;
+    }
+
+    debugPrint('[Discovery] TCP scan found ${subnets.length} subnet(s). Starting probes...');
 
     final completer = Completer<String?>();
     final checks = <Future<void>>[];
@@ -355,7 +360,7 @@ class ConnectionService extends ChangeNotifier {
     // Set an overall timeout for the TCP scan
     final scanTimeout = Timer(const Duration(seconds: 10), () {
       if (!completer.isCompleted) {
-        debugPrint('[Discovery] TCP scan timed out.');
+        debugPrint('[Discovery] TCP scan timed out after 10 seconds.');
         completer.complete(null);
       }
     });
@@ -368,6 +373,8 @@ class ConnectionService extends ChangeNotifier {
     for (final sn in subnets) {
       final start = (sn.network & sn.mask) + 1;
       final end = (sn.network | ~sn.mask) - 1;
+      debugPrint('[Discovery]   - Probing ${end - start + 1} addresses on subnet ${sn.selfIp}...');
+
       for (var i = start; i <= end; i++) {
         if (_scanCompleter?.isCompleted ?? false) break;
         final ip = _intToIpv4(i);
@@ -376,6 +383,7 @@ class ConnectionService extends ChangeNotifier {
         final addr = InternetAddress(ip);
         final check = _probeHost(addr).then((ok) {
           if (ok && !completer.isCompleted) {
+            debugPrint('[Discovery] TCP probe success at $ip');
             completer.complete('ws://${addr.address}:81/');
           }
         });
@@ -386,6 +394,7 @@ class ConnectionService extends ChangeNotifier {
     // Wait for all probes to finish. If none have succeeded by then, complete with null.
     Future.wait(checks).then((_) {
       if (!completer.isCompleted) {
+        debugPrint('[Discovery] All TCP probes finished, no device found.');
         completer.complete(null);
       }
     });
