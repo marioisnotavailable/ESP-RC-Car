@@ -120,6 +120,8 @@ class _DevPanelState extends State<DevPanel> {
                 const Spacer(),
             ],
           ),
+          if (widget.isExpanded) const SizedBox(height: 8),
+          if (widget.isExpanded) const _DiscoveryStrategySwitch(),
         ],
       ),
     );
@@ -194,6 +196,51 @@ class ConnectionStatusView extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+class _DiscoveryStrategySwitch extends StatelessWidget {
+  const _DiscoveryStrategySwitch();
+
+  @override
+  Widget build(BuildContext context) {
+    final connectionService = context.watch<ConnectionService>();
+    final strategy = connectionService.discoveryStrategy;
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Text('Scan:', style: TextStyle(color: Colors.white)),
+        const SizedBox(width: 8),
+        SegmentedButton<DiscoveryStrategy>(
+          segments: const [
+            ButtonSegment(
+              value: DiscoveryStrategy.udpFirst,
+              label: Text('UDP > TCP'),
+              tooltip: 'UDP first, then TCP',
+            ),
+            ButtonSegment(
+              value: DiscoveryStrategy.udpOnly,
+              label: Text('UDP Only'),
+            ),
+            ButtonSegment(
+              value: DiscoveryStrategy.tcpOnly,
+              label: Text('TCP Only'),
+            ),
+          ],
+          selected: {strategy},
+          onSelectionChanged: (newSelection) {
+            connectionService.setDiscoveryStrategy(newSelection.first);
+          },
+          style: SegmentedButton.styleFrom(
+            foregroundColor: Colors.white,
+            selectedForegroundColor: Colors.white,
+            selectedBackgroundColor: Colors.blue,
+            backgroundColor: Colors.grey[800],
+          ),
+        ),
+      ],
     );
   }
 }
