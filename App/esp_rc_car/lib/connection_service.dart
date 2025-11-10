@@ -131,6 +131,7 @@ class ConnectionService extends ChangeNotifier {
       // 2. UDP Discovery
       if (_discoveryStrategy == DiscoveryStrategy.udpFirst ||
           _discoveryStrategy == DiscoveryStrategy.udpOnly) {
+        _updateStatus(ConnectionStatus.scanning, DiscoveryMethod.udp);
         debugPrint('[Discovery] Starting UDP discovery...');
         foundUrl = await _udpDiscoverUrl(timeoutMs: 2000);
         if (foundUrl != null) {
@@ -147,6 +148,7 @@ class ConnectionService extends ChangeNotifier {
       // 3. TCP Subnet Scan
       if (_discoveryStrategy == DiscoveryStrategy.udpFirst ||
           _discoveryStrategy == DiscoveryStrategy.tcpOnly) {
+        _updateStatus(ConnectionStatus.scanning, DiscoveryMethod.tcp);
         debugPrint('[Discovery] Starting TCP subnet scan...');
         foundUrl = await _tcpDiscoverUrl();
         if (foundUrl != null) {
