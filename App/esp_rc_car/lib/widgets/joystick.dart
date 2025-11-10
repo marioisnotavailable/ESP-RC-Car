@@ -110,7 +110,8 @@ class _JoystickState extends State<Joystick> {
     // to prevent the knob from jumping to the touch position.
     final p = details.localPosition;
     final center = Offset(widget.size / 2, widget.size / 2);
-    final knobCenter = center + Offset(_local.dx * _travelRadius, -_local.dy * _travelRadius);
+    final knobCenter =
+        center + Offset(_local.dx * _travelRadius, -_local.dy * _travelRadius);
     _pointerOffset = p - knobCenter;
     _updatePosition(details.localPosition);
   }
@@ -124,7 +125,10 @@ class _JoystickState extends State<Joystick> {
     final center = Offset(widget.size / 2, widget.size / 2);
     final vector = desiredKnobCenter - center;
 
-    var norm = Offset(vector.dx / (_radius * _sensitivity), -vector.dy / (_radius * _sensitivity));
+    var norm = Offset(
+      vector.dx / (_radius * _sensitivity),
+      -vector.dy / (_radius * _sensitivity),
+    );
 
     if (widget.verticalOnly) {
       norm = Offset(0, norm.dy);
@@ -163,7 +167,7 @@ class _JoystickState extends State<Joystick> {
           shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
-              color: Colors.white.withOpacity(0.05),
+              color: const Color.fromRGBO(255, 255, 255, 0.05),
               blurRadius: 20,
               spreadRadius: -5,
             ),
@@ -179,8 +183,16 @@ class _JoystickState extends State<Joystick> {
                 color: Color(0xFF7A7A7A),
                 shape: BoxShape.circle,
                 boxShadow: [
-                  BoxShadow(blurRadius: 18, offset: Offset(0, 8), color: Color(0x59000000)),
-                  BoxShadow(blurRadius: 10, offset: Offset(0, 0), color: Color(0x14FFFFFF)),
+                  BoxShadow(
+                    blurRadius: 18,
+                    offset: Offset(0, 8),
+                    color: Color(0x59000000),
+                  ),
+                  BoxShadow(
+                    blurRadius: 10,
+                    offset: Offset(0, 0),
+                    color: Color(0x14FFFFFF),
+                  ),
                 ],
               ),
             ),

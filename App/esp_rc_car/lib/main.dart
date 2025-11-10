@@ -18,11 +18,13 @@ void main() {
         providers: [
           ChangeNotifierProvider(create: (_) => ConnectionService()),
           ChangeNotifierProxyProvider<ConnectionService, ControllerService>(
-            create: (context) => ControllerService(
-              Provider.of<ConnectionService>(context, listen: false),
-            ),
-            update: (context, connectionService, previous) =>
-                ControllerService(connectionService),
+            create:
+                (context) => ControllerService(
+                  Provider.of<ConnectionService>(context, listen: false),
+                ),
+            update:
+                (context, connectionService, previous) =>
+                    ControllerService(connectionService),
           ),
         ],
         child: const RCCarApp(),
@@ -85,11 +87,13 @@ class _ControllerPageState extends State<ControllerPage> {
                           stickSize: stickSize,
                           knobSize: knobSize,
                           verticalOnly: true,
-                          externalValue:
-                              Offset(0, controller.throttle / ControllerService.maxVal),
+                          externalValue: Offset(
+                            0,
+                            controller.throttle / ControllerService.maxVal,
+                          ),
                           sensitivity: 0.6,
-                          onChanged: (offset) =>
-                              controller.setThrottle(offset.dy),
+                          onChanged:
+                              (offset) => controller.setThrottle(offset.dy),
                           onEnd: () => controller.setThrottle(0),
                         ),
                       ),
@@ -99,8 +103,10 @@ class _ControllerPageState extends State<ControllerPage> {
                           stickSize: stickSize,
                           knobSize: knobSize,
                           horizontalOnly: true,
-                          externalValue:
-                              Offset(controller.steer / ControllerService.maxVal, 0),
+                          externalValue: Offset(
+                            controller.steer / ControllerService.maxVal,
+                            0,
+                          ),
                           sensitivity: 0.6,
                           onChanged: (offset) => controller.setSteer(offset.dx),
                           onEnd: () => controller.setSteer(0),
@@ -113,7 +119,9 @@ class _ControllerPageState extends State<ControllerPage> {
                         child: Text(
                           'Thr: ${controller.throttle.round()} | Steer: ${controller.steer.round()}',
                           style: const TextStyle(
-                              color: Colors.white54, fontSize: 14),
+                            color: Colors.white54,
+                            fontSize: 14,
+                          ),
                         ),
                       ),
                     GamepadStatus(
