@@ -6,11 +6,7 @@ class DevPanel extends StatefulWidget {
   final bool isExpanded;
   final VoidCallback onToggle;
 
-  const DevPanel({
-    super.key,
-    required this.isExpanded,
-    required this.onToggle,
-  });
+  const DevPanel({super.key, required this.isExpanded, required this.onToggle});
 
   @override
   State<DevPanel> createState() => _DevPanelState();
@@ -58,7 +54,10 @@ class _DevPanelState extends State<DevPanel> {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               IconButton(
-                icon: Icon(widget.isExpanded ? Icons.expand_less : Icons.expand_more, color: Colors.white),
+                icon: Icon(
+                  widget.isExpanded ? Icons.expand_less : Icons.expand_more,
+                  color: Colors.white,
+                ),
                 onPressed: widget.onToggle,
                 tooltip: 'Toggle Dev Panel',
               ),
@@ -76,15 +75,26 @@ class _DevPanelState extends State<DevPanel> {
                             hintText: 'ws://...',
                             hintStyle: TextStyle(color: Color(0xFF6E7A8A)),
                             isDense: true,
-                            contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                            contentPadding: EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 8,
+                            ),
                             border: OutlineInputBorder(),
                           ),
-                          onSubmitted: (url) => connectionService.connect(url, isManual: true),
+                          onSubmitted:
+                              (url) => connectionService.connect(
+                                url,
+                                isManual: true,
+                              ),
                         ),
                       ),
                       const SizedBox(width: 8),
                       ElevatedButton(
-                        onPressed: () => connectionService.connect(_wsUrlController.text, isManual: true),
+                        onPressed:
+                            () => connectionService.connect(
+                              _wsUrlController.text,
+                              isManual: true,
+                            ),
                         child: const Text('Connect'),
                       ),
                       const SizedBox(width: 8),

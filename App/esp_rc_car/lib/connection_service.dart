@@ -2,23 +2,11 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:network_info_plus/network_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-enum ConnectionStatus {
-  disconnected,
-  scanning,
-  connecting,
-  connected,
-}
+enum ConnectionStatus { disconnected, scanning, connecting, connected }
 
-enum DiscoveryMethod {
-  none,
-  udp,
-  tcp,
-  manual,
-  lastKnown,
-}
+enum DiscoveryMethod { none, udp, tcp, manual, lastKnown }
 
 class ConnectionService extends ChangeNotifier {
   static const _urlKey = 'ws_url';
@@ -84,7 +72,8 @@ class ConnectionService extends ChangeNotifier {
   /// 3. If that fails, perform a TCP subnet scan.
   /// 4. Connect to the first URL found.
   Future<void> findAndConnect({bool withLastKnown = true}) async {
-    if (_status == ConnectionStatus.connecting || _status == ConnectionStatus.scanning) {
+    if (_status == ConnectionStatus.connecting ||
+        _status == ConnectionStatus.scanning) {
       return;
     }
 
@@ -98,7 +87,10 @@ class ConnectionService extends ChangeNotifier {
       // 1. Try last known URL
       if (withLastKnown) {
         debugPrint('[Discovery] Trying last known URL: $_wsUrl');
-        final connected = await _tryConnect(_wsUrl, timeout: const Duration(seconds: 2));
+        final connected = await _tryConnect(
+          _wsUrl,
+          timeout: const Duration(seconds: 2),
+        );
         if (connected) {
           _updateStatus(ConnectionStatus.connected, DiscoveryMethod.lastKnown);
           return; // Success
@@ -150,12 +142,18 @@ class ConnectionService extends ChangeNotifier {
   Future<void> connect(String url, {bool isManual = false}) async {
     if (_status == ConnectionStatus.connecting && url == _wsUrl) return;
 
-    _updateStatus(ConnectionStatus.connecting, isManual ? DiscoveryMethod.manual : _discoveryMethod);
+    _updateStatus(
+      ConnectionStatus.connecting,
+      isManual ? DiscoveryMethod.manual : _discoveryMethod,
+    );
 
     final connected = await _tryConnect(url);
 
     if (connected) {
-      _updateStatus(ConnectionStatus.connected, isManual ? DiscoveryMethod.manual : _discoveryMethod);
+      _updateStatus(
+        ConnectionStatus.connected,
+        isManual ? DiscoveryMethod.manual : _discoveryMethod,
+      );
     } else {
       _updateStatus(ConnectionStatus.disconnected);
     }
@@ -169,9 +167,10 @@ class ConnectionService extends ChangeNotifier {
 
     try {
       _disconnect(quiet: true);
-      _socket = await WebSocket.connect(url,
-          compression: CompressionOptions.compressionOff)
-          .timeout(timeout ?? const Duration(seconds: 4));
+      _socket = await WebSocket.connect(
+        url,
+        compression: CompressionOptions.compressionOff,
+      ).timeout(timeout ?? const Duration(seconds: 4));
 
       _updateStatus(ConnectionStatus.connected, _discoveryMethod);
       debugPrint('[WS] Connected to $url');
@@ -350,8 +349,11 @@ class ConnectionService extends ChangeNotifier {
   Future<bool> _probeHost(InternetAddress addr, {int timeoutMs = 800}) async {
     if (_scanCompleter?.isCompleted ?? false) return false;
     try {
-      final s = await Socket.connect(addr, 81,
-          timeout: Duration(milliseconds: timeoutMs));
+      final s = await Socket.connect(
+        addr,
+        81,
+        timeout: Duration(milliseconds: timeoutMs),
+      );
       await s.close();
       return true;
     } catch (_) {
@@ -375,7 +377,8 @@ class ConnectionService extends ChangeNotifier {
           // Heuristic: assume /24 mask if not otherwise available.
           // network_info_plus could be more specific but this is more general.
           final parts = ip.split('.').map(int.parse).toList();
-          final ipInt = (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3];
+          final ipInt =
+              (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3];
           final maskInt = 0xFFFFFF00; // Assume /24
           final netInt = ipInt & maskInt;
 
@@ -401,11 +404,6 @@ class _Subnet {
   final int prefix;
   final String selfIp;
   _Subnet(this.network, this.mask, this.prefix, this.selfIp);
-}
-
-int _ipv4ToInt(String ip) {
-  final p = ip.split('.').map(int.parse).toList();
-  return (p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3];
 }
 
 String _intToIpv4(int x) {

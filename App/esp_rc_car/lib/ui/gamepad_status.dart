@@ -24,7 +24,7 @@ class GamepadStatus extends StatelessWidget {
         constraints: const BoxConstraints(maxWidth: 280),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.6),
+          color: const Color.fromRGBO(0, 0, 0, 0.6),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: Colors.green, width: 2),
         ),
@@ -44,10 +44,7 @@ class GamepadStatus extends StatelessWidget {
             const Text(
               'Left Stick: Steer\nL2/R2 Triggers: Throttle/Brake',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Color(0xFF99AADD),
-                fontSize: 11,
-              ),
+              style: TextStyle(color: Color(0xFF99AADD), fontSize: 11),
             ),
             const SizedBox(height: 4),
             _buildThrottleIndicator(),
@@ -60,9 +57,10 @@ class GamepadStatus extends StatelessWidget {
   Widget _buildThrottleIndicator() {
     final r2Value = (throttle > 0) ? (throttle / maxVal * 100).toInt() : 0;
     final l2Value = (throttle < 0) ? (-throttle / maxVal * 100).toInt() : 0;
-    final gasColor = throttle.abs() > 50
-        ? (throttle > 0 ? Colors.green : Colors.red)
-        : const Color(0xFFBBCCDD);
+    final gasColor =
+        throttle.abs() > 50
+            ? (throttle > 0 ? Colors.green : Colors.red)
+            : const Color(0xFFBBCCDD);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -70,10 +68,7 @@ class GamepadStatus extends StatelessWidget {
         Text(
           'L2: $l2Value% | R2: $r2Value%',
           textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: Color(0xFFBBCCDD),
-            fontSize: 10,
-          ),
+          style: const TextStyle(color: Color(0xFFBBCCDD), fontSize: 10),
         ),
         const SizedBox(height: 2),
         Text(
