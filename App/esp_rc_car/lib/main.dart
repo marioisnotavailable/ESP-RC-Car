@@ -91,7 +91,7 @@ class _ControllerPageState extends State<ControllerPage> {
                             0,
                             controller.throttle / ControllerService.maxVal,
                           ),
-                          sensitivity: 0.6,
+                          sensitivity: 0.8,
                           onChanged:
                               (offset) => controller.setThrottle(offset.dy),
                           onEnd: () => controller.setThrottle(0),
@@ -107,7 +107,7 @@ class _ControllerPageState extends State<ControllerPage> {
                             controller.steer / ControllerService.maxVal,
                             0,
                           ),
-                          sensitivity: 0.6,
+                          sensitivity: 0.8,
                           onChanged: (offset) => controller.setSteer(offset.dx),
                           onEnd: () => controller.setSteer(0),
                         ),
