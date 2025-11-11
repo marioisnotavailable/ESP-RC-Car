@@ -17,14 +17,9 @@ void main() {
       MultiProvider(
         providers: [
           ChangeNotifierProvider(create: (_) => ConnectionService()),
-          ChangeNotifierProxyProvider<ConnectionService, ControllerService>(
-            create:
-                (context) => ControllerService(
-                  Provider.of<ConnectionService>(context, listen: false),
-                ),
-            update:
-                (context, connectionService, previous) =>
-                    ControllerService(connectionService),
+          ChangeNotifierProvider(
+            create: (context) =>
+                ControllerService(context.read<ConnectionService>()),
           ),
         ],
         child: const RCCarApp(),

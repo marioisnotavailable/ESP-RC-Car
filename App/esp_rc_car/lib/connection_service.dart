@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:network_info_plus/network_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 enum ConnectionStatus { disconnected, scanning, connecting, connected }
@@ -20,6 +21,7 @@ class ConnectionService extends ChangeNotifier {
   DiscoveryStrategy _discoveryStrategy = DiscoveryStrategy.udpFirst;
   WebSocket? _socket;
   String _wsUrl = 'ws://192.168.4.1:81/';
+  String _lastSuccessfulUrl = 'ws://192.168.4.1:81/';
   Timer? _reconnectTimer;
   Completer<void>? _scanCompleter;
 
@@ -46,7 +48,13 @@ class ConnectionService extends ChangeNotifier {
   Future<void> _loadUrl() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      _wsUrl = prefs.getString(_urlKey) ?? _wsUrl;
+      final stored = prefs.getString(_urlKey);
+      if (stored != null && stored.isNotEmpty) {
+        _lastSuccessfulUrl = stored;
+        _wsUrl = stored;
+      } else {
+        _wsUrl = _lastSuccessfulUrl;
+      }
       notifyListeners();
     } catch (e) {
       debugPrint('[Prefs] Failed to load URL: $e');
@@ -80,6 +88,7 @@ class ConnectionService extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_urlKey, url);
+      _lastSuccessfulUrl = url;
     } catch (e) {
       debugPrint('[Prefs] Failed to save URL: $e');
     }
@@ -106,114 +115,130 @@ class ConnectionService extends ChangeNotifier {
       return;
     }
 
-    _updateStatus(ConnectionStatus.scanning, DiscoveryMethod.none);
     _disconnect(quiet: true);
     _scanCompleter = Completer<void>();
+    _updateStatus(ConnectionStatus.scanning, DiscoveryMethod.none);
 
     try {
-      String? foundUrl;
-
-      // 1. Try last known URL
-      if (withLastKnown) {
-        debugPrint('[Discovery] Trying last known URL: $_wsUrl');
-        final connected = await _tryConnect(
-          _wsUrl,
+      if (withLastKnown && _lastSuccessfulUrl.isNotEmpty) {
+        debugPrint('[Discovery] Trying last known URL: $_lastSuccessfulUrl');
+        final connected = await _connectUsing(
+          _lastSuccessfulUrl,
+          DiscoveryMethod.lastKnown,
           timeout: const Duration(seconds: 2),
         );
         if (connected) {
-          _updateStatus(ConnectionStatus.connected, DiscoveryMethod.lastKnown);
-          return; // Success
+          return;
         }
       }
 
       if (_scanCompleter?.isCompleted ?? false) return;
 
-      // 2. UDP Discovery
       if (_discoveryStrategy == DiscoveryStrategy.udpFirst ||
           _discoveryStrategy == DiscoveryStrategy.udpOnly) {
         _updateStatus(ConnectionStatus.scanning, DiscoveryMethod.udp);
         debugPrint('[Discovery] Starting UDP discovery...');
-        foundUrl = await _udpDiscoverUrl(timeoutMs: 2000);
-        if (foundUrl != null) {
+        final foundUrl = await _udpDiscoverUrl(timeoutMs: 2000);
+        if (foundUrl != null && !(_scanCompleter?.isCompleted ?? false)) {
           debugPrint('[Discovery] UDP found: $foundUrl');
-          if (await _tryConnect(foundUrl)) {
-            _updateStatus(ConnectionStatus.connected, DiscoveryMethod.udp);
-            return; // Success
+          if (await _connectUsing(foundUrl, DiscoveryMethod.udp)) {
+            return;
           }
         }
       }
 
       if (_scanCompleter?.isCompleted ?? false) return;
 
-      // 3. TCP Subnet Scan
       if (_discoveryStrategy == DiscoveryStrategy.udpFirst ||
           _discoveryStrategy == DiscoveryStrategy.tcpOnly) {
         _updateStatus(ConnectionStatus.scanning, DiscoveryMethod.tcp);
         debugPrint('[Discovery] Starting TCP subnet scan...');
-        foundUrl = await _tcpDiscoverUrl();
-        if (foundUrl != null) {
+        final foundUrl = await _tcpDiscoverUrl();
+        if (foundUrl != null && !(_scanCompleter?.isCompleted ?? false)) {
           debugPrint('[Discovery] TCP scan found: $foundUrl');
-          if (await _tryConnect(foundUrl)) {
-            _updateStatus(ConnectionStatus.connected, DiscoveryMethod.tcp);
-            return; // Success
+          if (await _connectUsing(foundUrl, DiscoveryMethod.tcp)) {
+            return;
           }
         }
       }
 
-      // 4. Failure
       debugPrint('[Discovery] Device not found.');
-      _updateStatus(ConnectionStatus.disconnected);
+      _updateStatus(ConnectionStatus.disconnected, DiscoveryMethod.none);
     } catch (e) {
       debugPrint('[Discovery] Error: $e');
       if (_status != ConnectionStatus.connected) {
-        _updateStatus(ConnectionStatus.disconnected);
+        _updateStatus(ConnectionStatus.disconnected, DiscoveryMethod.none);
       }
     } finally {
       if (!(_scanCompleter?.isCompleted ?? false)) {
         _scanCompleter?.complete();
       }
+      _scanCompleter = null;
     }
   }
 
   /// Connects to a specific WebSocket URL.
-  Future<void> connect(String url, {bool isManual = false}) async {
+  Future<void> connect(
+    String url, {
+    bool isManual = false,
+    DiscoveryMethod? reason,
+  }) async {
     if (_status == ConnectionStatus.connecting && url == _wsUrl) return;
 
-    _updateStatus(
-      ConnectionStatus.connecting,
-      isManual ? DiscoveryMethod.manual : _discoveryMethod,
+    final method = reason ?? (isManual ? DiscoveryMethod.manual : _discoveryMethod);
+    await _connectUsing(url, method);
+  }
+
+  Future<bool> _connectUsing(
+    String url,
+    DiscoveryMethod method, {
+    Duration? timeout,
+  }) async {
+    final target = url.trim();
+    if (target.isEmpty) return false;
+
+    _updateStatus(ConnectionStatus.connecting, method);
+    final success = await _tryConnect(
+      target,
+      timeout: timeout,
+      method: method,
     );
 
-    final connected = await _tryConnect(url);
-
-    if (connected) {
-      _updateStatus(
-        ConnectionStatus.connected,
-        isManual ? DiscoveryMethod.manual : _discoveryMethod,
-      );
-    } else {
-      _updateStatus(ConnectionStatus.disconnected);
+    if (!success) {
+      if (_scanCompleter != null && !(_scanCompleter?.isCompleted ?? false)) {
+        _updateStatus(ConnectionStatus.scanning, DiscoveryMethod.none);
+      } else {
+        _updateStatus(ConnectionStatus.disconnected, DiscoveryMethod.none);
+      }
     }
+
+    return success;
   }
 
   // Internal connect helper, returns true on success
-  Future<bool> _tryConnect(String url, {Duration? timeout}) async {
-    _wsUrl = url;
-    await _saveUrl(url);
-    notifyListeners(); // Notify URL change
+  Future<bool> _tryConnect(
+    String url, {
+    Duration? timeout,
+    DiscoveryMethod? method,
+  }) async {
+    final targetUrl = url.trim();
+    if (targetUrl.isEmpty) return false;
+
+    if (_wsUrl != targetUrl) {
+      _wsUrl = targetUrl;
+      notifyListeners();
+    }
 
     try {
       _disconnect(quiet: true);
-      _socket = await WebSocket.connect(
-        url,
+      final socket = await WebSocket.connect(
+        targetUrl,
         compression: CompressionOptions.compressionOff,
       ).timeout(timeout ?? const Duration(seconds: 4));
 
-      _updateStatus(ConnectionStatus.connected, _discoveryMethod);
-      debugPrint('[WS] Connected to $url');
-
+      _socket = socket;
       _socket?.listen(
-        (_) {}, // Ignore incoming data
+        (_) {},
         onDone: () {
           debugPrint('[WS] Disconnected');
           _disconnect();
@@ -226,14 +251,27 @@ class ConnectionService extends ChangeNotifier {
         },
         cancelOnError: true,
       );
+
+      await _applyConnectedState(targetUrl, method ?? _discoveryMethod);
+      debugPrint('[WS] Connected to $targetUrl');
       return true;
     } catch (e) {
-      debugPrint('[WS] Connection to $url failed: $e');
-      if (_status != ConnectionStatus.connected) {
-        _updateStatus(ConnectionStatus.disconnected);
-      }
+      debugPrint('[WS] Connection to $targetUrl failed: $e');
+      _disconnect(quiet: true);
       return false;
     }
+  }
+
+  Future<void> _applyConnectedState(
+    String url,
+    DiscoveryMethod method,
+  ) async {
+    _discoveryMethod = method;
+    if (_lastSuccessfulUrl != url) {
+      _lastSuccessfulUrl = url;
+      await _saveUrl(url);
+    }
+    _updateStatus(ConnectionStatus.connected, method);
   }
 
   void send(String data) {
@@ -264,11 +302,14 @@ class ConnectionService extends ChangeNotifier {
 
   void _scheduleReconnect() {
     if (_reconnectTimer?.isActive ?? false) return;
-    // Only schedule if we were previously connected, to avoid looping on bad URLs
+    final retryUrl = _lastSuccessfulUrl.trim().isNotEmpty
+        ? _lastSuccessfulUrl
+        : _wsUrl;
+    if (retryUrl.trim().isEmpty) return;
+
     _reconnectTimer = Timer(const Duration(seconds: 3), () {
-      if (_status != ConnectionStatus.connected) {
-        connect(_wsUrl);
-      }
+      if (_status == ConnectionStatus.connected) return;
+      connect(retryUrl, reason: DiscoveryMethod.lastKnown);
     });
   }
 
@@ -331,7 +372,7 @@ class ConnectionService extends ChangeNotifier {
       sock.send(data, InternetAddress('255.255.255.255'), _discPort);
       // Send to subnet-directed broadcast for each interface
       for (final sn in subnets) {
-        final bcastIp = _intToIpv4(sn.network | ~sn.mask);
+        final bcastIp = _intToIpv4(sn.network | (~sn.mask & 0xFFFFFFFF));
         sock.send(data, InternetAddress(bcastIp), _discPort);
       }
     } catch (e) {
@@ -371,9 +412,22 @@ class ConnectionService extends ChangeNotifier {
     });
 
     for (final sn in subnets) {
-      final start = (sn.network & sn.mask) + 1;
-      final end = (sn.network | ~sn.mask) - 1;
-      debugPrint('[Discovery]   - Probing ${end - start + 1} addresses on subnet ${sn.selfIp}...');
+      if (sn.prefix <= 0 || sn.prefix >= 31) {
+        debugPrint('[Discovery]   - Skipping subnet ${sn.selfIp} (prefix ${sn.prefix})');
+        continue;
+      }
+
+      final networkBase = _normalize32(sn.network & sn.mask);
+      final broadcast = _normalize32(sn.network | (~sn.mask & 0xFFFFFFFF));
+      if (broadcast <= networkBase + 1) {
+        debugPrint('[Discovery]   - Skipping subnet ${sn.selfIp} (no host addresses)');
+        continue;
+      }
+
+      final start = networkBase + 1;
+      final end = broadcast - 1;
+      final hostCount = end >= start ? (end - start + 1) : 0;
+      debugPrint('[Discovery]   - Probing $hostCount addresses on subnet ${sn.selfIp}...');
 
       for (var i = start; i <= end; i++) {
         if (_scanCompleter?.isCompleted ?? false) break;
@@ -446,6 +500,25 @@ class ConnectionService extends ChangeNotifier {
     } catch (e) {
       debugPrint('[Net] Could not get network info: $e');
     }
+
+    if (out.isEmpty) {
+      try {
+        final info = NetworkInfo();
+        final wifiIp = await info.getWifiIP();
+        if (wifiIp != null && wifiIp.isNotEmpty) {
+          final ipInt = _ipv4ToInt(wifiIp);
+          final maskStr = await info.getWifiSubmask();
+          final maskInt = _ipv4ToInt(maskStr) ?? 0xFFFFFF00;
+          if (ipInt != null) {
+            final netInt = ipInt & maskInt;
+            final prefix = _maskToPrefix(maskInt);
+            out.add(_Subnet(netInt, maskInt, prefix, wifiIp));
+          }
+        }
+      } catch (e) {
+        debugPrint('[Net] network_info_plus fallback failed: $e');
+      }
+    }
     return out;
   }
 
@@ -461,13 +534,44 @@ class _Subnet {
   final int mask;
   final int prefix;
   final String selfIp;
-  _Subnet(this.network, this.mask, this.prefix, this.selfIp);
+  _Subnet(int network, int mask, this.prefix, this.selfIp)
+      : network = _normalize32(network),
+        mask = _normalize32(mask);
 }
 
 String _intToIpv4(int x) {
-  final a = (x >> 24) & 0xFF;
-  final b = (x >> 16) & 0xFF;
-  final c = (x >> 8) & 0xFF;
-  final d = x & 0xFF;
+  final normalized = _normalize32(x);
+  final a = (normalized >> 24) & 0xFF;
+  final b = (normalized >> 16) & 0xFF;
+  final c = (normalized >> 8) & 0xFF;
+  final d = normalized & 0xFF;
   return '$a.$b.$c.$d';
 }
+
+int? _ipv4ToInt(String? ip) {
+  if (ip == null || ip.isEmpty) return null;
+  final parts = ip.split('.');
+  if (parts.length != 4) return null;
+  int value = 0;
+  for (final part in parts) {
+    final octet = int.tryParse(part);
+    if (octet == null || octet < 0 || octet > 255) return null;
+    value = (value << 8) | octet;
+  }
+  return _normalize32(value);
+}
+
+int _maskToPrefix(int mask) {
+  int count = 0;
+  int value = _normalize32(mask);
+  while (value != 0) {
+    if ((value & 0x80000000) == 0) break;
+    count++;
+    value = (value << 1) & 0xFFFFFFFF;
+  }
+  if (count < 0) return 0;
+  if (count > 32) return 32;
+  return count;
+}
+
+int _normalize32(int value) => value & 0xFFFFFFFF;
