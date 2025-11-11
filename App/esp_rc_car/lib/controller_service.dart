@@ -119,6 +119,7 @@ class ControllerService extends ChangeNotifier {
       _thrFilt = _thrFilt.clamp(-maxVal.toDouble(), maxVal.toDouble());
 
       _sendControls();
+
       notifyListeners();
     });
   }
