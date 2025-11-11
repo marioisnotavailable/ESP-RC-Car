@@ -104,23 +104,35 @@ class ControllerService extends ChangeNotifier {
   }
 
   void _startControlLoop() {
+    const changeThreshold = 0.5;
+
     _loop = Timer.periodic(Duration(milliseconds: (1000 / sendHz).round()), (
       _,
     ) {
-      // Apply smoothing filters
-      _steerFilt =
+      final filteredSteer =
           steerFilterAlpha * _steerFilt + (1 - steerFilterAlpha) * _steer;
-      _thrFilt =
+      final filteredThrottle =
           throttleFilterAlpha * _thrFilt +
           (1 - throttleFilterAlpha) * _throttle;
 
-      // Clamp values to ensure they are within the expected range
-      _steerFilt = _steerFilt.clamp(-maxVal.toDouble(), maxVal.toDouble());
-      _thrFilt = _thrFilt.clamp(-maxVal.toDouble(), maxVal.toDouble());
+      final clampedSteer =
+          filteredSteer.clamp(-maxVal.toDouble(), maxVal.toDouble());
+      final clampedThrottle =
+          filteredThrottle.clamp(-maxVal.toDouble(), maxVal.toDouble());
+
+      final steerChanged =
+          (clampedSteer - _steerFilt).abs() > changeThreshold;
+      final throttleChanged =
+          (clampedThrottle - _thrFilt).abs() > changeThreshold;
+
+      _steerFilt = clampedSteer;
+      _thrFilt = clampedThrottle;
 
       _sendControls();
 
-      notifyListeners();
+      if (steerChanged || throttleChanged) {
+        notifyListeners();
+      }
     });
   }
 }
