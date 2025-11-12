@@ -9,16 +9,12 @@ enum ConnectionStatus { disconnected, scanning, connecting, connected }
 
 enum DiscoveryMethod { none, udp, tcp, manual, lastKnown }
 
-enum DiscoveryStrategy { udpFirst, udpOnly, tcpOnly }
-
 class ConnectionService extends ChangeNotifier {
   static const _urlKey = 'ws_url';
-  static const _discoveryStrategyKey = 'discovery_strategy';
 
   // --- Private State ---
   ConnectionStatus _status = ConnectionStatus.disconnected;
   DiscoveryMethod _discoveryMethod = DiscoveryMethod.none;
-  DiscoveryStrategy _discoveryStrategy = DiscoveryStrategy.udpFirst;
   WebSocket? _socket;
   String _wsUrl = 'ws://192.168.4.1:81/';
   String _lastSuccessfulUrl = 'ws://192.168.4.1:81/';
@@ -33,7 +29,6 @@ class ConnectionService extends ChangeNotifier {
   // --- Public Getters ---
   ConnectionStatus get status => _status;
   DiscoveryMethod get discoveryMethod => _discoveryMethod;
-  DiscoveryStrategy get discoveryStrategy => _discoveryStrategy;
   WebSocket? get socket => _socket;
   String get wsUrl => _wsUrl;
 
@@ -42,7 +37,6 @@ class ConnectionService extends ChangeNotifier {
       // Automatically try to connect on startup with the loaded URL
       findAndConnect();
     });
-    _loadDiscoveryStrategy();
   }
 
   Future<void> _loadUrl() async {
@@ -58,29 +52,6 @@ class ConnectionService extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       debugPrint('[Prefs] Failed to load URL: $e');
-    }
-  }
-
-  Future<void> _loadDiscoveryStrategy() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final strategyIndex = prefs.getInt(_discoveryStrategyKey) ?? 0;
-      _discoveryStrategy = DiscoveryStrategy.values[strategyIndex];
-      notifyListeners();
-    } catch (e) {
-      debugPrint('[Prefs] Failed to load discovery strategy: $e');
-    }
-  }
-
-  Future<void> setDiscoveryStrategy(DiscoveryStrategy strategy) async {
-    if (_discoveryStrategy == strategy) return;
-    _discoveryStrategy = strategy;
-    notifyListeners();
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt(_discoveryStrategyKey, strategy.index);
-    } catch (e) {
-      debugPrint('[Prefs] Failed to save discovery strategy: $e');
     }
   }
 
@@ -134,31 +105,25 @@ class ConnectionService extends ChangeNotifier {
 
       if (_scanCompleter?.isCompleted ?? false) return;
 
-      if (_discoveryStrategy == DiscoveryStrategy.udpFirst ||
-          _discoveryStrategy == DiscoveryStrategy.udpOnly) {
-        _updateStatus(ConnectionStatus.scanning, DiscoveryMethod.udp);
-        debugPrint('[Discovery] Starting UDP discovery...');
-        final foundUrl = await _udpDiscoverUrl(timeoutMs: 2000);
-        if (foundUrl != null && !(_scanCompleter?.isCompleted ?? false)) {
-          debugPrint('[Discovery] UDP found: $foundUrl');
-          if (await _connectUsing(foundUrl, DiscoveryMethod.udp)) {
-            return;
-          }
+      _updateStatus(ConnectionStatus.scanning, DiscoveryMethod.udp);
+      debugPrint('[Discovery] Starting UDP discovery...');
+      final foundUdpUrl = await _udpDiscoverUrl(timeoutMs: 2000);
+      if (foundUdpUrl != null && !(_scanCompleter?.isCompleted ?? false)) {
+        debugPrint('[Discovery] UDP found: $foundUdpUrl');
+        if (await _connectUsing(foundUdpUrl, DiscoveryMethod.udp)) {
+          return;
         }
       }
 
       if (_scanCompleter?.isCompleted ?? false) return;
 
-      if (_discoveryStrategy == DiscoveryStrategy.udpFirst ||
-          _discoveryStrategy == DiscoveryStrategy.tcpOnly) {
-        _updateStatus(ConnectionStatus.scanning, DiscoveryMethod.tcp);
-        debugPrint('[Discovery] Starting TCP subnet scan...');
-        final foundUrl = await _tcpDiscoverUrl();
-        if (foundUrl != null && !(_scanCompleter?.isCompleted ?? false)) {
-          debugPrint('[Discovery] TCP scan found: $foundUrl');
-          if (await _connectUsing(foundUrl, DiscoveryMethod.tcp)) {
-            return;
-          }
+      _updateStatus(ConnectionStatus.scanning, DiscoveryMethod.tcp);
+      debugPrint('[Discovery] Starting TCP subnet scan...');
+      final foundTcpUrl = await _tcpDiscoverUrl();
+      if (foundTcpUrl != null && !(_scanCompleter?.isCompleted ?? false)) {
+        debugPrint('[Discovery] TCP scan found: $foundTcpUrl');
+        if (await _connectUsing(foundTcpUrl, DiscoveryMethod.tcp)) {
+          return;
         }
       }
 
