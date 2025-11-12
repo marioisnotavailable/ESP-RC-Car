@@ -25,6 +25,7 @@ class ConnectionService extends ChangeNotifier {
   static const int _discPort = 49352;
   static const String _discQuery = 'ESP_RC_DISCOVER';
   static const String _discRespPrefix = 'ESP_RC_HERE ';
+  static const int _tcpProbeDelayMs = 5;
 
   // --- Public Getters ---
   ConnectionStatus get status => _status;
@@ -360,16 +361,10 @@ class ConnectionService extends ChangeNotifier {
 
     debugPrint('[Discovery] TCP scan found ${subnets.length} subnet(s). Starting probes...');
 
+    final startTime = DateTime.now();
     final completer = Completer<String?>();
-    final checks = <Future<void>>[];
-
-    // Set an overall timeout for the TCP scan
-    final scanTimeout = Timer(const Duration(seconds: 10), () {
-      if (!completer.isCompleted) {
-        debugPrint('[Discovery] TCP scan timed out after 10 seconds.');
-        completer.complete(null);
-      }
-    });
+    var pendingProbes = 0;
+    var completedProbes = 0;
 
     // Stop if the user cancels the scan
     _scanCompleter?.future.then((_) {
@@ -377,6 +372,7 @@ class ConnectionService extends ChangeNotifier {
     });
 
     for (final sn in subnets) {
+      if (completer.isCompleted) break;
       if (sn.prefix <= 0 || sn.prefix >= 31) {
         debugPrint('[Discovery]   - Skipping subnet ${sn.selfIp} (prefix ${sn.prefix})');
         continue;
@@ -392,35 +388,73 @@ class ConnectionService extends ChangeNotifier {
       final start = networkBase + 1;
       final end = broadcast - 1;
       final hostCount = end >= start ? (end - start + 1) : 0;
-      debugPrint('[Discovery]   - Probing $hostCount addresses on subnet ${sn.selfIp}...');
+      final maskIp = _intToIpv4(_normalize32(sn.mask));
+      final networkIp = _intToIpv4(networkBase);
+      final broadcastIp = _intToIpv4(broadcast);
+      debugPrint(
+        '[Discovery]   - Subnet $networkIp/${sn.prefix} mask $maskIp broadcast '
+        '$broadcastIp (self ${sn.selfIp}), probing $hostCount host(s)...',
+      );
 
       for (var i = start; i <= end; i++) {
         if (_scanCompleter?.isCompleted ?? false) break;
-        final ip = _intToIpv4(i);
-        if (ip == sn.selfIp) continue;
+        if (completer.isCompleted) break;
+        pendingProbes++;
+        final ipInt = i;
+        final scheduledIndex = pendingProbes - 1;
+        final delay = Duration(milliseconds: scheduledIndex * _tcpProbeDelayMs);
 
-        final addr = InternetAddress(ip);
-        final check = _probeHost(addr).then((ok) {
-          if (ok && !completer.isCompleted) {
-            debugPrint('[Discovery] TCP probe success at $ip');
-            completer.complete('ws://${addr.address}:81/');
+        () async {
+          try {
+            if (delay > Duration.zero) {
+              await Future.delayed(delay);
+            }
+            if (_scanCompleter?.isCompleted ?? false) return;
+            if (completer.isCompleted) return;
+
+            final ip = _intToIpv4(ipInt);
+            if (ip == sn.selfIp) return;
+
+            final addr = InternetAddress(ip);
+            final ok = await _probeHost(addr);
+            if (ok && !completer.isCompleted) {
+              final elapsed = DateTime.now().difference(startTime);
+              final attempts = completedProbes + 1;
+              debugPrint(
+                '[Discovery] TCP probe success at $ip after ${elapsed.inMilliseconds}ms '
+                '($attempts host(s) tested).',
+              );
+              completer.complete('ws://${addr.address}:81/');
+            }
+          } finally {
+            pendingProbes -= 1;
+            if (pendingProbes < 0) {
+              pendingProbes = 0;
+            }
+            completedProbes += 1;
+            if (pendingProbes == 0 && !completer.isCompleted) {
+              final elapsed = DateTime.now().difference(startTime);
+              debugPrint(
+                '[Discovery] All TCP probes finished after ${elapsed.inMilliseconds}ms '
+                '($completedProbes host(s) tested), no device found.',
+              );
+              completer.complete(null);
+            }
           }
-        });
-        checks.add(check);
+        }();
       }
     }
 
-    // Wait for all probes to finish. If none have succeeded by then, complete with null.
-    Future.wait(checks).then((_) {
-      if (!completer.isCompleted) {
-        debugPrint('[Discovery] All TCP probes finished, no device found.');
-        completer.complete(null);
-      }
-    });
+    if (pendingProbes == 0 && !completer.isCompleted) {
+      final elapsed = DateTime.now().difference(startTime);
+      debugPrint(
+        '[Discovery] All TCP probes finished after ${elapsed.inMilliseconds}ms '
+        '($completedProbes host(s) tested), no device found.',
+      );
+      completer.complete(null);
+    }
 
-    final result = await completer.future;
-    scanTimeout.cancel(); // Clean up the timer
-    return result;
+    return completer.future;
   }
 
   Future<bool> _probeHost(InternetAddress addr, {int timeoutMs = 800}) async {
@@ -443,48 +477,54 @@ class ConnectionService extends ChangeNotifier {
     try {
       final interfaces = await NetworkInterface.list(
         includeLoopback: false,
+        includeLinkLocal: false,
         type: InternetAddressType.IPv4,
       );
       for (final interface in interfaces) {
         for (final addr in interface.addresses) {
-          // Very basic check for a private, non-loopback, non-link-local address
           if (addr.isLoopback || addr.isLinkLocal) continue;
 
-          final ip = addr.address;
-          // Heuristic: assume /24 mask if not otherwise available.
-          // network_info_plus could be more specific but this is more general.
-          final parts = ip.split('.').map(int.parse).toList();
-          final ipInt =
-              (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3];
-          final maskInt = 0xFFFFFF00; // Assume /24
-          final netInt = ipInt & maskInt;
+          final ipInt = _ipv4ToInt(addr.address);
+          if (ipInt == null) continue;
 
-          out.add(_Subnet(netInt, maskInt, 24, ip));
+          const defaultPrefix = 24;
+          final maskInt = _prefixToMask(defaultPrefix);
+          final netInt = ipInt & maskInt;
+          out.add(_Subnet(netInt, maskInt, defaultPrefix, addr.address));
         }
       }
     } catch (e) {
       debugPrint('[Net] Could not get network info: $e');
     }
 
-    if (out.isEmpty) {
-      try {
-        final info = NetworkInfo();
-        final wifiIp = await info.getWifiIP();
-        if (wifiIp != null && wifiIp.isNotEmpty) {
-          final ipInt = _ipv4ToInt(wifiIp);
-          final maskStr = await info.getWifiSubmask();
-          final maskInt = _ipv4ToInt(maskStr) ?? 0xFFFFFF00;
-          if (ipInt != null) {
-            final netInt = ipInt & maskInt;
-            final prefix = _maskToPrefix(maskInt);
-            out.add(_Subnet(netInt, maskInt, prefix, wifiIp));
-          }
-        }
-      } catch (e) {
-        debugPrint('[Net] network_info_plus fallback failed: $e');
-      }
-    }
+    await _overrideWithWifiInfo(out);
     return out;
+  }
+
+  Future<void> _overrideWithWifiInfo(List<_Subnet> subnets) async {
+    try {
+      final info = NetworkInfo();
+      final wifiIp = await info.getWifiIP();
+      if (wifiIp == null || wifiIp.isEmpty) return;
+
+      final maskStr = await info.getWifiSubmask();
+      final maskInt = _ipv4ToInt(maskStr);
+      final ipInt = _ipv4ToInt(wifiIp);
+      if (maskInt == null || ipInt == null) return;
+
+      final prefix = _maskToPrefix(maskInt);
+      final netInt = ipInt & maskInt;
+      final updated = _Subnet(netInt, maskInt, prefix, wifiIp);
+
+      final existingIndex = subnets.indexWhere((sn) => sn.selfIp == wifiIp);
+      if (existingIndex >= 0) {
+        subnets[existingIndex] = updated;
+      } else {
+        subnets.add(updated);
+      }
+    } catch (e) {
+      debugPrint('[Net] network_info_plus override failed: $e');
+    }
   }
 
   @override
@@ -540,3 +580,10 @@ int _maskToPrefix(int mask) {
 }
 
 int _normalize32(int value) => value & 0xFFFFFFFF;
+
+int _prefixToMask(int prefix) {
+  if (prefix <= 0) return 0;
+  if (prefix >= 32) return 0xFFFFFFFF;
+  final shift = 32 - prefix;
+  return _normalize32(0xFFFFFFFF << shift);
+}
