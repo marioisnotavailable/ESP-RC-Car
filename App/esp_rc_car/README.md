@@ -4,6 +4,8 @@ This is the companion Flutter application for the ESP32-based RC car project. It
 
 ![App Screenshot](../AppWithoutDev.png)
 
+![Developer Panel Screenshot](../AppWithDev.png)
+
 ## Features
 
 - **Real-time Control**: Low-latency vehicle control via a WebSocket interface.
