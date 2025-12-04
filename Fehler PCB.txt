@@ -2,3 +2,4 @@ Fehler PCB:
 Batterie Spannungsteiler geht auf Pin ohne ADC.
 Servo Motor geht auf nicht verwendbaren Pin
 Gate Treiber hat zu wenige GND Verbindung
+USB PD IC: MOSFETs Gate mit falschem Pin vom IC verbunden
