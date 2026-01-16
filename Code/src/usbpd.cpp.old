@@ -23,7 +23,6 @@ void setup()
     Serial.println("ERROR: Cannot connect to STUSB4500 (0x28).");
     while (1) delay(1000);
   }
-5
   Serial.println("Connected.");
 
   // --------- PDO1 = 5V ----------
