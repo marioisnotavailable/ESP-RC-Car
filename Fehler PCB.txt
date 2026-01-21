@@ -6,3 +6,4 @@ USB PD IC: MOSFETs Gate mit falschem Pin vom IC verbunden
 Buck Converter: Widerstände vertauscht
 Add RGB Led
 USB PD Voltage ADC 
+Battery Load IC Pin 12 needs to be connected
