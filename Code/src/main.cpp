@@ -9,6 +9,7 @@
 #include <vector>
 #include "driver/gpio.h"
 #include <WiFiUdp.h>
+#include <batterie.h>
 
 // ----------------- Konfiguration / Konstanten -----------------
 #define HTTP_PORT                 80
@@ -349,6 +350,8 @@ struct Cmd {
 volatile Cmd lastCmd = {0,0,0};
 static uint32_t lastCmdMs = 0;
 
+
+
 // ----------------- LittleFS -------------------
 void listFS() {
   Serial.println("[FS] Listing:");
@@ -632,6 +635,8 @@ void loop(){
     nextServoUpdateMs = nowMs + 20;   // nächster Frame
     servoWriteMicrosecondsUnified(currentServoUs);
   }
+
+  Serial.printf("Batterie: %dV\n", newbatterie);
 
   // Debug optional:
   // Serial.printf("thr=%d steer=%d filt=%.1f us=%d mode=%s\n",
