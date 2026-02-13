@@ -5,7 +5,7 @@ void setup()
       const int ADC_UB = 39; // Pin für Spannungsmessung
   const float VOLTAGE_LEVEL = 3.3; // Referenzspannung des ADC
   const int R1 = 10000; // Widerstand R1 in Ohm
-  const int R2 = 10000; // Widerstand R2 iöön Ohm
+  const int R2 = 10000; // Widerstand R2 in Ohm
   const float POWER_WARN_MODE = 7.9; // Spannung für Warnung
   const float POWER_OFF_MODE = 7.4; // Spannung für Abschaltung
   const int WAITTIME = 10; // Wartezeit zwischen den Messungen in ms
@@ -15,7 +15,7 @@ void setup()
   static int count = 0;
   static int batterie_low_cont = 0;
 
-  //FastLED.addLeds<NEOPIXEL, 2>(leds, NUM_LEDS); // Pin für die LEDs
+  FastLED.addLeds<NEOPIXEL, 2>(leds, NUM_LEDS); // Pin für die LEDs
 
 }
 
