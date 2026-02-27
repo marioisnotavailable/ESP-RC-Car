@@ -9,7 +9,10 @@
 #include <vector>
 #include "driver/gpio.h"
 #include <WiFiUdp.h>
-#include <batterie.h>
+
+// ----------------- Batterie -----------------
+
+extern int newbatterie;   // kommt aus batterie.cpp
 
 // ----------------- Konfiguration / Konstanten -----------------
 #define HTTP_PORT                 80
