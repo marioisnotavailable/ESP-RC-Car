@@ -1,0 +1,5 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "lib")(type "Altium")(uri "/home/mirko/Documents/GithubRepos/ESP-RC-Car/PCB/lib/lib.SchLib")(options "")(descr ""))
+  (lib (name "ESP-RC-Car-altium-import")(type "KiCad")(uri "${KIPRJMOD}/ESP-RC-Car-altium-import.kicad_sym")(options "")(descr ""))
+)
