@@ -7,3 +7,4 @@ Buck Converter: Widerstände vertauscht
 Add RGB Led
 USB PD Voltage ADC 
 Battery Load IC Pin 12 needs to be connected
+Baettery Lade IC Spule an bsd nicht an sw oder umgekehrt 
