@@ -1,81 +1,120 @@
 #include <Arduino.h>
-#include <FastLED.h>
 #include <driver/gpio.h>
+#include <driver/adc.h>
+#include <esp_adc_cal.h>
 
-#define ADC_UB 2 // Pin für Spannungsmessung - GPIO2
-#define VOLTAGE_LEVEL 3.3 // Referenzspannung des ADC
-#define R1 1800000 // Widerstand R1 in Ohm
-#define R2 1000000 // Widerstand R2 in Ohm
-#define POWER_WARN_MODE 7.9 // Spannung für Warnung
-#define POWER_OFF_MODE 7.4 // Spannung für Abschaltung
-#define WAITTIME 10 // Wartezeit zwischen den Messungen in ms
-#define NUM_LEDS 1 // Anzahl der LEDs
-float newbatterie = 0;
-int count = 0;
-int batterie_low_cont = 0;
+// ── Pins & Hardware ──────────────────────────────────────────
+#define ADC_UB_CHANNEL  ADC1_CHANNEL_0  // GPIO1 = ADC1_CH0
 
-void setup()
+// ── Spannungsteiler ──────────────────────────────────────────
+#define R1              1800000.0f
+#define R2              1000000.0f
+#define DIVIDER_RATIO   ((R1 + R2) / R2)
+
+// ── Batterie-Schwellen ────────────────────────────────────────
+#define POWER_WARN_MODE 7.9f
+#define POWER_OFF_MODE  7.4f
+
+// ── Sampling ─────────────────────────────────────────────────
+#define SAMPLE_INTERVAL_MS  2
+#define SAMPLE_COUNT        500
+#define RESULT_INTERVAL_MS  1000
+#define LOW_CONFIRM_COUNT   3
+
+// ── Globals ──────────────────────────────────────────────────
+static esp_adc_cal_characteristics_t adc_chars;
+static bool     cali_ok        = false;
+static int      lowVoltageHits = 0;
+
+// ─────────────────────────────────────────────────────────────
+void adc_cali_init()
 {
-  Serial.begin(115200);
-  delay(1000);
-  Serial.println("Setup started");
-  
-  // GPIO2 als reiner ADC-Input (kein Pull-Up/Down)
-  gpio_config_t io_conf = {};
-  io_conf.intr_type = GPIO_INTR_DISABLE;
-  io_conf.mode = GPIO_MODE_INPUT;
-  io_conf.pin_bit_mask = (1ULL << 2);
-  io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
-  io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
-  gpio_config(&io_conf);
-  
-  // ADC-Auflösung auf 12 Bit setzen
-  analogReadResolution(12);
+    esp_adc_cal_value_t cal_type = esp_adc_cal_characterize(
+        ADC_UNIT_1,
+        ADC_ATTEN_DB_12,
+        ADC_WIDTH_BIT_12,
+        1100,           // default Vref falls eFuse leer
+        &adc_chars
+    );
 
-  //FastLED.addLeds<NEOPIXEL, 2>(leds, NUM_LEDS); // Pin für die LEDs
-
+    if (cal_type == ESP_ADC_CAL_VAL_EFUSE_VREF) {
+        Serial.println("[CAL] eFuse Vref Kalibrierung OK");
+        cali_ok = true;
+    } else if (cal_type == ESP_ADC_CAL_VAL_EFUSE_TP) {
+        Serial.println("[CAL] eFuse Two Point Kalibrierung OK");
+        cali_ok = true;
+    } else {
+        Serial.println("[CAL] Keine eFuse – Default Vref 1100mV");
+        cali_ok = true; // chars trotzdem nutzbar
+    }
 }
 
+// ─────────────────────────────────────────────────────────────
+void setup()
+{
+    Serial.begin(115200);
+    delay(1000);
+    Serial.println("[BOOT] Batteriemonitor gestartet");
+
+    gpio_config_t io_conf = {};
+    io_conf.intr_type     = GPIO_INTR_DISABLE;
+    io_conf.mode          = GPIO_MODE_INPUT;
+    io_conf.pin_bit_mask  = (1ULL << 1);
+    io_conf.pull_down_en  = GPIO_PULLDOWN_DISABLE;
+    io_conf.pull_up_en    = GPIO_PULLUP_DISABLE;
+    gpio_config(&io_conf);
+
+    adc1_config_width(ADC_WIDTH_BIT_12);
+    adc1_config_channel_atten(ADC_UB_CHANNEL, ADC_ATTEN_DB_12);
+    adc_cali_init();
+}
+
+// ─────────────────────────────────────────────────────────────
 void loop()
 {
-  static unsigned long lastRead = 0;
-  
-  if (millis() - lastRead >= WAITTIME)
-  {
-    lastRead = millis();
-    newbatterie += analogRead(ADC_UB);
-    count++;
-    if (count >= 200)
-    {
-      // ADC-Wert zu Spannung: (ADC/4095)*3.3 * ((R1+R2)/R2)
-      float adc_avg = newbatterie / 200.0;
-      float voltage = adc_avg * (VOLTAGE_LEVEL / 4095.0) * ((R1 + R2) / R2);
-      
-      Serial.print("ADC RAW: ");
-      Serial.print(adc_avg);
-      Serial.print(" | Spannung: ");
-      Serial.print(voltage);
-      Serial.println("V");
-      
-      if (voltage <= POWER_OFF_MODE)
-      {
-        batterie_low_cont++;
-      }
-      else
-      {
-        batterie_low_cont = 0;
-      }
-      
-      // Deep Sleep nur wenn 3x niedrig
-      if (batterie_low_cont >= 3)
-      {
-        Serial.println("BATTERIE ZU NIEDRIG - Deep Sleep aktiviert");
-        //esp_sleep_enable_timer_wakeup(4000000);
-        //esp_deep_sleep_start();
-      }
-      
-      count = 0;
-      newbatterie = 0;
+    static unsigned long lastEval = 0;
+    static uint32_t      mvAccum  = 0;
+    static int           count    = 0;
+
+    // Sampling
+    int raw = adc1_get_raw(ADC_UB_CHANNEL);
+    if (raw >= 0) {
+        mvAccum += esp_adc_cal_raw_to_voltage(raw, &adc_chars);
+        count++;
     }
-  }
+
+    if (millis() - lastEval < RESULT_INTERVAL_MS) return;
+    lastEval = millis();
+
+    if (count == 0) {
+        Serial.println("[ERR] Keine Samples");
+        return;
+    }
+
+    // ── Spannung berechnen ────────────────────────────────────
+    float vAdc  = (float)(mvAccum / count) / 1000.0f;
+    float vBatt = vAdc * DIVIDER_RATIO;
+
+    Serial.printf("[ADC] V_ADC: %.3fV (%s) | V_Batt: %.2fV | Samples: %d\n",
+                  vAdc, cali_ok ? "kalibriert" : "unkalibriert", vBatt, count);
+
+    mvAccum = 0;
+    count   = 0;
+
+    // ── Schwellen prüfen ──────────────────────────────────────
+    if (vBatt <= POWER_OFF_MODE) {
+        lowVoltageHits++;
+        Serial.printf("[WARN] Unterspannung %d/%d\n", lowVoltageHits, LOW_CONFIRM_COUNT);
+    } else {
+        lowVoltageHits = 0;
+        if (vBatt <= POWER_WARN_MODE) {
+            Serial.println("[WARN] Batterie niedrig!");
+        }
+    }
+
+    if (lowVoltageHits >= LOW_CONFIRM_COUNT) {
+        Serial.println("[SLEEP] Batterie zu niedrig – Deep Sleep");
+        esp_sleep_enable_timer_wakeup(4000000ULL);
+        esp_deep_sleep_start();
+    }
 }
