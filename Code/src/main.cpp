@@ -3,8 +3,18 @@
 #include <driver/adc.h>
 #include <esp_adc_cal.h>
 
+#include "drv8323.h"
+
 // ── Pins & Hardware ──────────────────────────────────────────
 #define ADC_UB_CHANNEL  ADC1_CHANNEL_0  // GPIO1 = ADC1_CH0
+
+// DRV8323S (gate driver) pinning
+static constexpr uint8_t PIN_DRV_MISO  = 5;
+static constexpr uint8_t PIN_DRV_MOSI  = 6;
+static constexpr uint8_t PIN_DRV_SCLK  = 7;
+static constexpr uint8_t PIN_DRV_EN    = 16; // EN / nSLEEP
+static constexpr uint8_t PIN_DRV_CS    = 15; // nSCS
+static constexpr uint8_t PIN_DRV_FAULT = 39; // nFAULT (open drain)
 
 // ── Spannungsteiler ──────────────────────────────────────────
 #define R1              1800000.0f
@@ -25,6 +35,17 @@
 static esp_adc_cal_characteristics_t adc_chars;
 static bool     cali_ok        = false;
 static int      lowVoltageHits = 0;
+
+static DRV8323 drv(PIN_DRV_CS, PIN_DRV_EN, PIN_DRV_FAULT,
+                   PIN_DRV_SCLK, PIN_DRV_MISO, PIN_DRV_MOSI);
+
+// LEDC PWM setup for 1-PWM test (user-requested)
+static constexpr uint32_t PWM_FREQ = 20000; // 20 kHz
+static constexpr uint8_t  PWM_BITS = 10;    // 0..1023
+static constexpr uint16_t PWM_DUTY = 512;   // ~50%
+
+// PWM channel only on INHA (pin 18). Other INLx/INHx are forced low.
+static const int CH_PWM = 0;
 
 // ─────────────────────────────────────────────────────────────
 void adc_cali_init()
@@ -55,6 +76,30 @@ void setup()
     Serial.begin(115200);
     delay(1000);
     Serial.println("[BOOT] Batteriemonitor gestartet");
+
+    Serial.println("[DRV] Initialisiere DRV8323S...");
+    drv.begin();
+
+    // Set DRV to 1x PWM mode (PWM_MODE = 0b10).
+    drv.writeRegister(0x2, 0x080);
+    Serial.printf("[DRV] DRV_CTRL (0x2) gesetzt auf 0x%03X\n", drv.readRegister(0x2));
+
+    Serial.println("[DRV] Registerdump (0x0-0x6):");
+    for (uint8_t reg = 0; reg <= 6; ++reg) {
+        uint16_t val = drv.readRegister(reg);
+        Serial.printf("[DRV] Reg 0x%X = 0x%03X\n", reg, val);
+    }
+
+    // LEDC: attach only INHA to PWM, others forced low
+    ledcSetup(CH_PWM, PWM_FREQ, PWM_BITS);
+    ledcAttachPin(18, CH_PWM);
+    ledcWrite(CH_PWM, PWM_DUTY);
+
+    pinMode(8, OUTPUT);  digitalWrite(8, LOW);  // INLA
+    pinMode(3, OUTPUT);  digitalWrite(3, LOW);  // INHB
+    pinMode(9, OUTPUT);  digitalWrite(9, LOW);  // INLB
+    pinMode(10, OUTPUT); digitalWrite(10, LOW); // INHC
+    pinMode(11, OUTPUT); digitalWrite(11, LOW); // INLC
 
     gpio_config_t io_conf = {};
     io_conf.intr_type     = GPIO_INTR_DISABLE;
@@ -90,7 +135,6 @@ void loop()
         Serial.println("[ERR] Keine Samples");
         return;
     }
-
     // ── Spannung berechnen ────────────────────────────────────
     float vAdc  = (float)(mvAccum / count) / 1000.0f;
     float vBatt = vAdc * DIVIDER_RATIO;
@@ -100,6 +144,16 @@ void loop()
 
     mvAccum = 0;
     count   = 0;
+
+    // DRV8323S Status
+    uint16_t drvFault1 = drv.readFault1();
+    uint16_t drvFault2 = drv.readFault2();
+    bool faultActive   = drv.hasFault();
+    Serial.printf("[DRV] Fault1: 0x%03X | Fault2: 0x%03X | nFAULT: %s\n",
+                  drvFault1, drvFault2, faultActive ? "LOW (Fault)" : "hoch");
+    if (faultActive) {
+        drv.clearFaults();
+    }
 
     // ── Schwellen prüfen ──────────────────────────────────────
     if (vBatt <= POWER_OFF_MODE) {
@@ -118,3 +172,4 @@ void loop()
         esp_deep_sleep_start();
     }
 }
+
