@@ -12,7 +12,9 @@
 
 // ----------------- Batterie -----------------
 
-extern int newbatterie;   // kommt aus batterie.cpp
+extern int vBatt;   // kommt aus batterie.cpp
+void batterie_setup();
+void batterie_loop();
 
 // ----------------- Konfiguration / Konstanten -----------------
 #define HTTP_PORT                 80
@@ -510,6 +512,10 @@ void onWs(uint8_t num, WStype_t type, uint8_t* payload, size_t len) {
 static uint32_t ledTimer = 0;
 static bool ledState = false;
 
+// ---- Batterie-Sendeintervall ----
+static uint32_t nextBattSendMs = 0;
+#define BATT_SEND_INTERVAL_MS 1000
+
 // ----------------- Setup ----------------------
 void setup(){
   Serial.begin(115200);
@@ -575,6 +581,9 @@ void setup(){
   // Start UDP discovery service
   udpDiscoveryBegin();
 
+  // Initialize battery monitoring
+  batterie_setup();
+
   // Servo initialisieren (immer aktiv, auch in AP/Setup-Modus)
   if (!servoLEDCInit()) {
     servoFallbackInit();
@@ -611,7 +620,17 @@ void loop(){
   // UDP discovery
   udpDiscoveryHandle();
 
-  // Failsafe: ohne Daten → Mitte
+  // Battery monitoring
+  batterie_loop();
+
+  // Send battery status periodically to all connected clients
+  uint32_t now = millis();
+  if (now >= nextBattSendMs) {
+    nextBattSendMs = now + BATT_SEND_INTERVAL_MS;
+    // Format: "BATT:vBatt" (e.g., "BATT:79" for 7.9V)
+    String battMsg = "BATT:" + String(vBatt);
+    ws.broadcastTXT((uint8_t*)battMsg.c_str(), battMsg.length());
+  }
   if (millis() - lastCmdMs > FAILSAFE_MS) {
     lastCmd.steer = 0; // optional: später auch throttle failsafen
   }
@@ -639,7 +658,6 @@ void loop(){
     servoWriteMicrosecondsUnified(currentServoUs);
   }
 
-  Serial.printf("Batterie: %dV\n", newbatterie);
 
   // Debug optional:
   // Serial.printf("thr=%d steer=%d filt=%.1f us=%d mode=%s\n",

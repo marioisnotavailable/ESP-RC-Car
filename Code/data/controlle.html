@@ -76,6 +76,7 @@
     <p><b>Steuerung:</b> Touch-Sticks, Tastatur (<code>W/S</code> vor/zurück, <code>A/D</code> links/rechts)<br>
        <b>Gamepad:</b> linker Stick = Lenkung, <b>R2</b> = vorwärts, <b>L2</b> = rückwärts</p>
     <div class="status" id="gpStatus">Gamepad: nicht verbunden</div>
+    <div class="status" id="batteryStatus">Batterie: --</div>
   </div>
 
 <script>
@@ -86,6 +87,26 @@ function connectWS(){
   ws = new WebSocket(WS_URL);
   ws.onopen  = ()=> console.log("WS connected");
   ws.onclose = ()=> setTimeout(connectWS, 1000);
+  ws.onmessage = (event)=>{
+    const msg = event.data;
+    // Parse battery status: "BATT:vBatt" (e.g., "BATT:79" for 7.9V)
+    if (msg.startsWith("BATT:")) {
+      const battVal = parseInt(msg.substring(5));
+      if (!isNaN(battVal)) {
+        const voltage = (battVal / 10).toFixed(1);
+        document.getElementById("batteryStatus").textContent = `Batterie: ${voltage}V`;
+        // Color coding: >= 80 green, 74-80 orange, <= 74 red (critical)
+        const battEl = document.getElementById("batteryStatus");
+        if (battVal <= 74) {
+          battEl.style.color = "#f99"; // Red - critical/deep discharge warning
+        } else if (battVal < 80) {
+          battEl.style.color = "#fa0"; // Orange - warning (min 7.9V, but not fully recovered)
+        } else {
+          battEl.style.color = "#9ad"; // Cyan - ok
+        }
+      }
+    }
+  };
 }
 connectWS();
 
