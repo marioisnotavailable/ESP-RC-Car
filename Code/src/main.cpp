@@ -31,7 +31,7 @@ void adc_cali_init()
 {
     esp_adc_cal_value_t cal_type = esp_adc_cal_characterize(
         ADC_UNIT_1,
-        ADC_ATTEN_DB_12,
+        ADC_ATTEN_DB_11,
         ADC_WIDTH_BIT_12,
         1100,           // default Vref falls eFuse leer
         &adc_chars
@@ -65,7 +65,7 @@ void setup()
     gpio_config(&io_conf);
 
     adc1_config_width(ADC_WIDTH_BIT_12);
-    adc1_config_channel_atten(ADC_UB_CHANNEL, ADC_ATTEN_DB_12);
+    adc1_config_channel_atten(ADC_UB_CHANNEL, ADC_ATTEN_DB_11);
     adc_cali_init();
 }
 
