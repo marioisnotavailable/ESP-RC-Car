@@ -1,75 +1,79 @@
+#include "batterie.h"
 #include <Arduino.h>
 #include <FastLED.h>
-void setup()
+
+// --- Konfiguration ---
+static const int   ADC_UB          = 39;     // ADC-Pin für Spannungsmessung
+static const float VOLTAGE_REF     = 3.3f;   // Referenzspannung des ADC
+static const int   ADC_MAX         = 4095;   // 12-Bit ADC
+static const int   R1              = 10000;  // Spannungsteiler R1 [Ohm]
+static const int   R2              = 10000;  // Spannungsteiler R2 [Ohm]
+static const float BAT_MAX_V       = 8.4f;   // 2S LiPo voll geladen  → 100 %
+static const float BAT_MIN_V       = 7.0f;   // 2S LiPo entladen      →   0 %
+static const float POWER_WARN_V    = 7.9f;   // LED-Warnschwelle
+static const float POWER_OFF_V     = 7.4f;   // Abschaltschwelle
+static const int   SAMPLE_COUNT    = 200;    // Messungen pro Mittelwert
+static const int   SAMPLE_DELAY_MS  = 10;     // Pause zwischen zwei Messungen [ms]
+static const int   NUM_LEDS         = 1;      // Anzahl NeoPixel-LEDs
+static const uint64_t SLEEP_US      = 4000000ULL; // Tiefschlaf-Dauer nach leerer Batterie (4 s)
+
+// --- Globale Variable (via batterie.h nach außen sichtbar) ---
+int batterie_percent = -1;  // -1 = noch keine Messung
+
+// --- Interne Variablen ---
+static CRGB     leds[NUM_LEDS];
+static float    batSum        = 0.0f;
+static int      batCount      = 0;
+static int      batLowCount   = 0;
+static uint32_t lastSampleMs  = 0;
+
+void batterie_init()
 {
-      const int ADC_UB = 39; // Pin für Spannungsmessung
-  const float VOLTAGE_LEVEL = 3.3; // Referenzspannung des ADC
-  const int R1 = 10000; // Widerstand R1 in Ohm
-  const int R2 = 10000; // Widerstand R2 in Ohm
-  const float POWER_WARN_MODE = 7.9; // Spannung für Warnung
-  const float POWER_OFF_MODE = 7.4; // Spannung für Abschaltung
-  const int WAITTIME = 10; // Wartezeit zwischen den Messungen in ms
-  const int NUM_LEDS = 1; // Anzahl der LEDs
-
-  static float newbatterie = 0;
-  static int count = 0;
-  static int batterie_low_cont = 0;
-
-  FastLED.addLeds<NEOPIXEL, 2>(leds, NUM_LEDS); // Pin für die LEDs
-
+  FastLED.addLeds<NEOPIXEL, 2>(leds, NUM_LEDS);
+  for (int i = 0; i < NUM_LEDS; i++) leds[i] = CRGB::Black;
+  FastLED.show();
 }
 
-void loop()
+void batterie_update()
 {
+  uint32_t now = millis();
+  if (now - lastSampleMs < (uint32_t)SAMPLE_DELAY_MS) return;
+  lastSampleMs = now;
 
-if (millis() % WAITTIME == 0)
-  {
-    newbatterie += analogRead(ADC_UB);
-    count++;
-    if (count >= 200)
-    {
-      newbatterie = newbatterie / 200 * (VOLTAGE_LEVEL * (R2 + R1) / R2);
-      SerialBT.print(newbatterie);
-      SerialBT.println("V");
-      if (newbatterie < POWER_WARN_MODE)
-      {
+  batSum += (float)analogRead(ADC_UB);
+  batCount++;
 
-        for (int i = 0; i < NUM_LEDS; i++)
-        {
-          leds[i] = CRGB::Red;
-        }
-        FastLED.show();
-      }
-      else
-      {
-        for (int i = 0; i < NUM_LEDS; i++)
-        {
-          leds[i] = CRGB::Green;
-        }
-        FastLED.show();
-      }
-      if (newbatterie <= POWER_OFF_MODE)
-      {
-        batterie_low_cont++;
-      }
-      else
-      {
-        batterie_low_cont = 0;
-      }
-      count = 0;
-      newbatterie = 0;
-    }
-  }
-  if (batterie_low_cont >= 3)
+  if (batCount >= SAMPLE_COUNT)
   {
-    for (int i = 0; i < NUM_LEDS; i++)
-    {
-      leds[i] = CRGB::Black;
-    }
+    // Spannung berechnen
+    float avgAdc  = batSum / (float)SAMPLE_COUNT;
+    float voltage = (avgAdc / (float)ADC_MAX) * VOLTAGE_REF * ((float)(R1 + R2) / (float)R2);
+
+    // Spannung in Prozent umrechnen (begrenzt auf 0–100)
+    int pct = (int)(((voltage - BAT_MIN_V) / (BAT_MAX_V - BAT_MIN_V)) * 100.0f);
+    if (pct < 0)   pct = 0;
+    if (pct > 100) pct = 100;
+    batterie_percent = pct;
+
+    // LED-Anzeige: Grün = OK, Rot = Warnung
+    CRGB color = (voltage < POWER_WARN_V) ? CRGB::Red : CRGB::Green;
+    for (int i = 0; i < NUM_LEDS; i++) leds[i] = color;
     FastLED.show();
-    ledcWrite(0, 0);
-    ledcWrite(1, 0);
-    esp_sleep_enable_timer_wakeup(4000000);
+
+    // Abschaltzähler
+    if (voltage <= POWER_OFF_V) batLowCount++;
+    else                        batLowCount = 0;
+
+    batSum   = 0.0f;
+    batCount = 0;
+  }
+
+  // Tiefschlaf bei anhaltend leerer Batterie
+  if (batLowCount >= 3)
+  {
+    for (int i = 0; i < NUM_LEDS; i++) leds[i] = CRGB::Black;
+    FastLED.show();
+    esp_sleep_enable_timer_wakeup(SLEEP_US);
     esp_deep_sleep_start();
   }
 }

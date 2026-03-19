@@ -20,6 +20,7 @@ class ConnectionService extends ChangeNotifier {
   String _lastSuccessfulUrl = 'ws://192.168.4.1:81/';
   Timer? _reconnectTimer;
   Completer<void>? _scanCompleter;
+  int _batteryPercent = -1;
 
   // --- Constants ---
   static const int _discPort = 49352;
@@ -32,6 +33,7 @@ class ConnectionService extends ChangeNotifier {
   DiscoveryMethod get discoveryMethod => _discoveryMethod;
   WebSocket? get socket => _socket;
   String get wsUrl => _wsUrl;
+  int get batteryPercent => _batteryPercent;
 
   ConnectionService() {
     _loadUrl().then((_) {
@@ -204,7 +206,15 @@ class ConnectionService extends ChangeNotifier {
 
       _socket = socket;
       _socket?.listen(
-        (_) {},
+        (message) {
+          if (message is String && message.startsWith('BAT:')) {
+            final pct = int.tryParse(message.substring(4));
+            if (pct != null && pct != _batteryPercent) {
+              _batteryPercent = pct;
+              notifyListeners();
+            }
+          }
+        },
         onDone: () {
           debugPrint('[WS] Disconnected');
           _disconnect();
@@ -261,6 +271,7 @@ class ConnectionService extends ChangeNotifier {
     _reconnectTimer = null;
     _socket?.close();
     _socket = null;
+    _batteryPercent = -1;
     if (!quiet) {
       _updateStatus(ConnectionStatus.disconnected, DiscoveryMethod.none);
     }

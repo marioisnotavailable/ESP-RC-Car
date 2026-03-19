@@ -12,7 +12,7 @@
 
 // ----------------- Batterie -----------------
 
-extern int newbatterie;   // kommt aus batterie.cpp
+#include "batterie.h"   // batterie_init(), batterie_update(), batterie_percent
 
 // ----------------- Konfiguration / Konstanten -----------------
 #define HTTP_PORT                 80
@@ -54,6 +54,10 @@ static uint32_t    nextServoUpdateMs = 0;    // 20ms Scheduler
 // LED Blink (Gas)
 #define BLINK_MIN_MS              50
 #define BLINK_MAX_MS              800
+
+// Batterie-Broadcast über WebSocket
+#define BAT_BROADCAST_MS          5000UL  // alle 5 Sekunden
+static uint32_t nextBatBroadcastMs = 0;
 
 // ----------------- Webserver / WS ------------
 WebSocketsServer ws(WS_PORT);
@@ -587,6 +591,9 @@ void setup(){
 
   lastCmdMs = millis();
   nextServoUpdateMs = millis(); // sofort erste Ausgabe erlauben
+
+  // Batterie-Modul initialisieren
+  batterie_init();
 }
 
 // ----------------- Loop -----------------------
@@ -639,7 +646,18 @@ void loop(){
     servoWriteMicrosecondsUnified(currentServoUs);
   }
 
-  Serial.printf("Batterie: %dV\n", newbatterie);
+  // ---- Batterie messen & Prozent berechnen ----
+  batterie_update();
+
+  // ---- Batterieprozent alle 5 s per WebSocket senden ----
+  // batterie_percent ist sicher lesbar: Arduino-Loop läuft single-threaded.
+  if (millis() >= nextBatBroadcastMs && batterie_percent >= 0) {
+    nextBatBroadcastMs = millis() + BAT_BROADCAST_MS;
+    char batMsg[16];
+    snprintf(batMsg, sizeof(batMsg), "BAT:%d", batterie_percent);
+    ws.broadcastTXT(batMsg);
+    Serial.printf("[BAT] %d%%\n", batterie_percent);
+  }
 
   // Debug optional:
   // Serial.printf("thr=%d steer=%d filt=%.1f us=%d mode=%s\n",

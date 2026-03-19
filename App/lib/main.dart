@@ -2,6 +2,7 @@ import 'package:esp_rc_car/connection_service.dart';
 import 'package:esp_rc_car/controller_service.dart';
 import 'package:esp_rc_car/ui/dev_panel.dart';
 import 'package:esp_rc_car/ui/gamepad_status.dart';
+import 'package:esp_rc_car/widgets/battery_indicator.dart';
 import 'package:esp_rc_car/widgets/joystick.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -140,6 +141,15 @@ class _ControllerPageState extends State<ControllerPage> {
                               isConnected: controller.gamepadConnected,
                               throttle: controller.throttle,
                               maxVal: ControllerService.maxVal,
+                            ),
+                            // Battery percentage indicator (top-left)
+                            Align(
+                              alignment: const Alignment(-0.98, -0.92),
+                              child: BatteryIndicator(
+                                percent: context
+                                    .watch<ConnectionService>()
+                                    .batteryPercent,
+                              ),
                             ),
                           ],
                         ),
