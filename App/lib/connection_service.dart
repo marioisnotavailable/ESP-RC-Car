@@ -11,6 +11,9 @@ enum DiscoveryMethod { none, udp, tcp, manual, lastKnown }
 
 class ConnectionService extends ChangeNotifier {
   static const _urlKey = 'ws_url';
+  static const _battPrefix = 'BATT:';
+  static const int _battMinDeciVolt = 74; // 7.4V
+  static const int _battMaxDeciVolt = 84; // 8.4V
 
   // --- Private State ---
   ConnectionStatus _status = ConnectionStatus.disconnected;
@@ -20,6 +23,7 @@ class ConnectionService extends ChangeNotifier {
   String _lastSuccessfulUrl = 'ws://192.168.4.1:81/';
   Timer? _reconnectTimer;
   Completer<void>? _scanCompleter;
+  int? _batteryDeciVolt;
 
   // --- Constants ---
   static const int _discPort = 49352;
@@ -32,6 +36,18 @@ class ConnectionService extends ChangeNotifier {
   DiscoveryMethod get discoveryMethod => _discoveryMethod;
   WebSocket? get socket => _socket;
   String get wsUrl => _wsUrl;
+  int? get batteryDeciVolt => _batteryDeciVolt;
+  double? get batteryVolt =>
+      _batteryDeciVolt == null ? null : _batteryDeciVolt! / 10.0;
+  int? get batteryPercent {
+    final deci = _batteryDeciVolt;
+    if (deci == null) return null;
+    if (deci <= _battMinDeciVolt) return 0;
+    if (deci >= _battMaxDeciVolt) return 100;
+    return (((deci - _battMinDeciVolt) * 100) /
+            (_battMaxDeciVolt - _battMinDeciVolt))
+        .round();
+  }
 
   ConnectionService() {
     _loadUrl().then((_) {
@@ -204,7 +220,7 @@ class ConnectionService extends ChangeNotifier {
 
       _socket = socket;
       _socket?.listen(
-        (_) {},
+        _handleIncomingMessage,
         onDone: () {
           debugPrint('[WS] Disconnected');
           _disconnect();
@@ -256,13 +272,40 @@ class ConnectionService extends ChangeNotifier {
     _disconnect();
   }
 
+  void _handleIncomingMessage(dynamic data) {
+    if (data == null) return;
+    final msg = data.toString().trim();
+    if (msg.isEmpty) return;
+
+    if (msg.startsWith(_battPrefix)) {
+      final rawValue = msg.substring(_battPrefix.length).trim();
+      final deciVolt = int.tryParse(rawValue);
+      if (deciVolt == null) {
+        debugPrint('[WS] Invalid battery payload: $msg');
+        return;
+      }
+      _setBatteryDeciVolt(deciVolt);
+    }
+  }
+
+  void _setBatteryDeciVolt(int value) {
+    if (_batteryDeciVolt == value) return;
+    _batteryDeciVolt = value;
+    notifyListeners();
+  }
+
   void _disconnect({bool quiet = false}) {
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
     _socket?.close();
     _socket = null;
+    if (_batteryDeciVolt != null) {
+      _batteryDeciVolt = null;
+    }
     if (!quiet) {
       _updateStatus(ConnectionStatus.disconnected, DiscoveryMethod.none);
+    } else {
+      notifyListeners();
     }
   }
 
