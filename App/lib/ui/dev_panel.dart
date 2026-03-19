@@ -126,12 +126,23 @@ class _DevPanelState extends State<DevPanel> {
 }
 
 class ConnectionStatusView extends StatelessWidget {
-  const ConnectionStatusView({super.key});
+  final bool showWsStatus;
+  final bool showBattery;
+  final MainAxisAlignment rowAlignment;
+
+  const ConnectionStatusView({
+    super.key,
+    this.showWsStatus = true,
+    this.showBattery = true,
+    this.rowAlignment = MainAxisAlignment.center,
+  });
 
   @override
   Widget build(BuildContext context) {
     final connectionService = context.watch<ConnectionService>();
     final status = connectionService.status;
+    final volts = connectionService.batteryVolt;
+    final percent = connectionService.batteryPercent;
 
     String statusText;
     Color statusColor;
@@ -164,22 +175,113 @@ class ConnectionStatusView extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisAlignment: rowAlignment,
         children: [
-          Icon(Icons.circle, color: statusColor, size: 12),
-          const SizedBox(width: 8),
-          Text(
-            'WS: $statusText',
-            style: TextStyle(color: statusColor, fontSize: 13),
-          ),
-          if (methodText.isNotEmpty && status == ConnectionStatus.connected)
+          if (showWsStatus) ...[
+            Icon(Icons.circle, color: statusColor, size: 12),
+            const SizedBox(width: 8),
             Text(
-              methodText,
-              style: TextStyle(color: Colors.grey[400], fontSize: 13),
+              'WS: $statusText',
+              style: TextStyle(color: statusColor, fontSize: 13),
             ),
+            if (methodText.isNotEmpty && status == ConnectionStatus.connected)
+              Text(
+                methodText,
+                style: TextStyle(color: Colors.grey[400], fontSize: 13),
+              ),
+            const SizedBox(width: 12),
+          ],
+          if (showBattery) _buildBatteryIndicator(status, volts, percent),
         ],
       ),
     );
+  }
+
+  Widget _buildBatteryIndicator(
+    ConnectionStatus status,
+    double? volts,
+    int? percent,
+  ) {
+    final color = _batteryColor(status, percent);
+    final percentText = _batteryPercentText(status, percent);
+    final icon = _batteryIcon(status, percent);
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: 48,
+          height: 30,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              RotatedBox(
+                quarterTurns: 1,
+                child: Icon(icon, color: color, size: 40),
+              ),
+              Positioned.fill(
+                child: Align(
+                  // Material battery glyph has uneven vertical mass after rotation.
+                  // A slight downward alignment centers the number visually in the body.
+                  alignment: const Alignment(-0.10, 0.60),
+                  child: Text(
+                    percentText,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: _batteryTextColor(status, percent),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      height: 1.0,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _batteryPercentText(ConnectionStatus status, int? percent) {
+    if (status != ConnectionStatus.connected || percent == null) {
+      return '000';
+    }
+    return '${percent.clamp(0, 99)}';
+  }
+
+  IconData _batteryIcon(ConnectionStatus status, int? percent) {
+    if (status != ConnectionStatus.connected || percent == null) {
+      return Icons.battery_0_bar;
+    }
+    if (percent <= 10) return Icons.battery_alert;
+    if (percent <= 25) return Icons.battery_2_bar;
+    if (percent <= 50) return Icons.battery_3_bar;
+    if (percent <= 75) return Icons.battery_5_bar;
+    return Icons.battery_full;
+  }
+
+  Color _batteryColor(ConnectionStatus status, int? percent) {
+    if (status != ConnectionStatus.connected) {
+      return Colors.grey;
+    }
+    if (percent == null) {
+      return Colors.orange;
+    }
+    if (percent <= 15) {
+      return Colors.redAccent;
+    }
+    if (percent <= 35) {
+      return Colors.orangeAccent;
+    }
+    return Colors.lightGreenAccent;
+  }
+
+  Color _batteryTextColor(ConnectionStatus status, int? percent) {
+    if (status != ConnectionStatus.connected || percent == null) {
+      return const Color(0xFFE0E0E0);
+    }
+    return Colors.black;
   }
 
   String _scanMethodText(DiscoveryMethod method) {

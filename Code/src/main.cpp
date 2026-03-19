@@ -140,11 +140,6 @@ void batterie_loop()
 
 // ========== END BATTERIEMONITORING ==========
 
-// ----------------- Batterie -----------------
-// vBatt und Funktionen sind oben definiert
-// void batterie_setup();
-// void batterie_loop();
-
 // ----------------- Konfiguration / Konstanten -----------------
 #define HTTP_PORT                 80
 #define WS_PORT                   81
