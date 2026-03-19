@@ -88,7 +88,6 @@ class _ControllerPageState extends State<ControllerPage> {
                       Expanded(
                         child: Stack(
                           children: [
-                            if (_showDevPanel) const ConnectionStatusView(),
                             if (!controller.gamepadConnected) ...[
                               Align(
                                 alignment: const Alignment(-0.98, 0.6),
@@ -157,6 +156,26 @@ class _ControllerPageState extends State<ControllerPage> {
                       setState(() => _showDevPanel = !_showDevPanel),
                 ),
               ),
+              Positioned(
+                top: _showDevPanel ? (_devPanelHeight - 6) : 8,
+                right: 12,
+                child: const ConnectionStatusView(
+                  showWsStatus: false,
+                  showBattery: true,
+                  rowAlignment: MainAxisAlignment.end,
+                ),
+              ),
+              if (_showDevPanel)
+                Positioned(
+                  top: _devPanelHeight - 6,
+                  left: 0,
+                  right: 0,
+                  child: const ConnectionStatusView(
+                    showWsStatus: true,
+                    showBattery: false,
+                    rowAlignment: MainAxisAlignment.center,
+                  ),
+                ),
             ],
           ),
         ),
