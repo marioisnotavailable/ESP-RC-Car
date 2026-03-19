@@ -1,0 +1,16 @@
+drv8323srtar
+miso 5
+mosi 6
+en 16
+sclk 7
+inlc 11
+inhc 10
+inlb 9
+inhb 3
+inla 8
+inha 18
+cal 17
+ss 15
+soa 40
+sob 41
+soc 42
