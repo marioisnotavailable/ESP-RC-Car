@@ -20,7 +20,10 @@
 #define R1              1800000.0f
 #define R2              1000000.0f
 #define DIVIDER_RATIO   ((R1 + R2) / R2)
-
+// ── Batterie-Kalibrierung (Prozent) ───────────────────────
+#define BATT_MAX_VOLTAGE  8.39f  // 100%
+#define BATT_MIN_VOLTAGE  7.5f   // 0%
+#define BATT_VOLTAGE_RANGE (BATT_MAX_VOLTAGE - BATT_MIN_VOLTAGE)
 // ── Batterie-Schwellen ────────────────────────────────────────
 #define POWER_WARN_MODE 7.9f
 #define POWER_OFF_MODE  7.4f
@@ -32,7 +35,10 @@
 #define LOW_CONFIRM_COUNT   3
 
 // ── Battery Globals ──────────────────────────────────────────
-volatile int vBatt = 0;  // Batteriespannung * 10 (z.B. 79 = 7.9V)
+volatile int batteryPercent = 0;  // Batterieprozentage (0-100%)
+static float vBatt_float_last = 0.0f;  // Letzte Rohspannung für Logging
+static float vAdc_last = 0.0f;  // Letzte kalibrierte ADC-Spannung für WebSocket
+static int   sampleCount_last = 0;  // Letzte Sample-Anzahl für WebSocket
 
 static esp_adc_cal_characteristics_t adc_chars;
 static bool cali_ok        = false;
@@ -101,11 +107,16 @@ void batterie_loop()
     float vAdc  = (float)(mvAccum / count) / 1000.0f;
     float vBatt_float = vAdc * DIVIDER_RATIO;
 
-    // Speichere in globale Variable (x10 für ganze Zahlen)
-    vBatt = (int)(vBatt_float * 10);
+    // Berechne Batterieprozentage (8.39V = 100%, 7.5V = 0%)
+    float percent = ((vBatt_float - BATT_MIN_VOLTAGE) / BATT_VOLTAGE_RANGE) * 100.0f;
+    percent = constrain(percent, 0.0f, 100.0f);
+    batteryPercent = (int)percent;
+    vBatt_float_last = vBatt_float;  // Für Logging speichern
+    vAdc_last = vAdc;  // Speichern für WebSocket-Übertragung
+    sampleCount_last = count;  // Speichern für WebSocket-Übertragung
 
     Serial.printf("[ADC] V_ADC: %.3fV (%s) | V_Batt: %.2fV (vBatt=%d) | Samples: %d\n",
-                  vAdc, cali_ok ? "kalibriert" : "unkalibriert", vBatt_float, vBatt, count);
+                  vAdc, cali_ok ? "kalibriert" : "unkalibriert", vBatt_float, batteryPercent, count);
 
     mvAccum = 0;
     count   = 0;
@@ -741,13 +752,14 @@ void loop(){
   // Battery monitoring
   batterie_loop();
 
-  // Send battery status periodically to all connected clients
+  // Send ADC status periodically to all connected clients
   uint32_t now = millis();
   if (now >= nextBattSendMs) {
     nextBattSendMs = now + BATT_SEND_INTERVAL_MS;
-    // Format: "BATT:vBatt" (e.g., "BATT:79" for 7.9V)
-    String battMsg = "BATT:" + String(vBatt);
-    ws.broadcastTXT((uint8_t*)battMsg.c_str(), battMsg.length());
+    // Format: "ADC:vAdc,vBatt,samples" (e.g., "ADC:3.058,8.56,5211")
+    char adcMsg[64];
+    snprintf(adcMsg, sizeof(adcMsg), "ADC:%.3f,%.2f,%d", vAdc_last, vBatt_float_last, sampleCount_last);
+    ws.broadcastTXT((uint8_t*)adcMsg, strlen(adcMsg));
   }
   if (millis() - lastCmdMs > FAILSAFE_MS) {
     lastCmd.steer = 0; // optional: später auch throttle failsafen

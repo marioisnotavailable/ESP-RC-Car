@@ -47,6 +47,46 @@ async function refreshAll() {
   } catch (e) { console.error(e); }
 }
 
+// WebSocket for ADC monitoring
+let ws; 
+function connectWebSocket() {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${protocol}//${window.location.hostname}:81/`;
+  ws = new WebSocket(wsUrl);
+  
+  ws.onopen = () => {
+    console.log('WebSocket connected');
+  };
+  
+  ws.onmessage = (event) => {
+    const msg = event.data;
+    // Parse ADC message: "ADC:vAdc,vBatt,samples" (e.g., "ADC:3.058,8.56,5211")
+    if (msg.startsWith('ADC:')) {
+      const parts = msg.substring(4).split(',');
+      if (parts.length === 3) {
+        const vAdc = parseFloat(parts[0]);
+        const vBatt = parseFloat(parts[1]);
+        const samples = parseInt(parts[2]);
+        
+        if (!isNaN(vAdc) && !isNaN(vBatt) && !isNaN(samples)) {
+          document.getElementById('adc-vAdc').textContent = vAdc.toFixed(3);
+          document.getElementById('adc-vBatt').textContent = vBatt.toFixed(2);
+          document.getElementById('adc-samples').textContent = samples;
+        }
+      }
+    }
+  };
+  
+  ws.onerror = (error) => {
+    console.error('WebSocket error:', error);
+  };
+  
+  ws.onclose = () => {
+    console.log('WebSocket disconnected, reconnecting in 2s...');
+    setTimeout(connectWebSocket, 2000);
+  };
+}
+
 window.addEventListener('DOMContentLoaded', () => {
   const addForm = document.getElementById('add-form');
   const ssid = document.getElementById('ssid');
@@ -101,4 +141,5 @@ window.addEventListener('DOMContentLoaded', () => {
   });
 
   refreshAll();
+  connectWebSocket();  // Connect to WebSocket for ADC monitoring
 });
