@@ -141,7 +141,6 @@ class ConnectionStatusView extends StatelessWidget {
   Widget build(BuildContext context) {
     final connectionService = context.watch<ConnectionService>();
     final status = connectionService.status;
-    final volts = connectionService.batteryVolt;
     final percent = connectionService.batteryPercent;
 
     String statusText;
@@ -191,7 +190,7 @@ class ConnectionStatusView extends StatelessWidget {
               ),
             const SizedBox(width: 12),
           ],
-          if (showBattery) _buildBatteryIndicator(status, volts, percent),
+          if (showBattery) _buildBatteryIndicator(status, percent),
         ],
       ),
     );
@@ -199,7 +198,6 @@ class ConnectionStatusView extends StatelessWidget {
 
   Widget _buildBatteryIndicator(
     ConnectionStatus status,
-    double? volts,
     int? percent,
   ) {
     final color = _batteryColor(status, percent);
