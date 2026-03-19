@@ -747,14 +747,14 @@ void loop(){
   // Battery monitoring
   batterie_loop();
 
-  // Send ADC status periodically to all connected clients
+  // Send battery percentage periodically to all connected clients
   uint32_t now = millis();
   if (now >= nextBattSendMs) {
     nextBattSendMs = now + BATT_SEND_INTERVAL_MS;
-    // Format: "ADC:vAdc,vBatt,samples" (e.g., "ADC:3.058,8.56,5211")
-    char adcMsg[64];
-    snprintf(adcMsg, sizeof(adcMsg), "ADC:%.3f,%.2f,%d", vAdc_last, vBatt_float_last, sampleCount_last);
-    ws.broadcastTXT((uint8_t*)adcMsg, strlen(adcMsg));
+    // Format: "BATT:XX" where XX is battery percentage (0-100)
+    char battMsg[16];
+    snprintf(battMsg, sizeof(battMsg), "BATT:%d", batteryPercent);
+    ws.broadcastTXT((uint8_t*)battMsg, strlen(battMsg));
   }
   if (millis() - lastCmdMs > FAILSAFE_MS) {
     lastCmd.steer = 0; // optional: später auch throttle failsafen
