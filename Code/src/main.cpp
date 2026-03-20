@@ -66,8 +66,19 @@ static constexpr uint32_t PWM_FREQ = 20000; // 20 kHz
 static constexpr uint8_t  PWM_BITS = 10;    // 0..1023
 static constexpr uint16_t PWM_DUTY = 512;   // ~50%
 
-// PWM channel only on INHA (pin 18). Other INLx/INHx are forced low.
-static const int CH_PWM = 0;
+static constexpr uint8_t PIN_INHA = 18;
+static constexpr uint8_t PIN_INLA = 8;
+static constexpr uint8_t PIN_INHB = 3;
+static constexpr uint8_t PIN_INLB = 9;
+static constexpr uint8_t PIN_INHC = 10;
+static constexpr uint8_t PIN_INLC = 11;
+
+// Direction test: run a few seconds one way, then reverse.
+static constexpr uint32_t MOTOR_DIR_SWITCH_MS = 5000UL;  // Diagnostic: 5s Phase B only
+static const int CH_PWM_A = 0;  // Timer 0
+static const int CH_PWM_B = 7;  // Timer 1 (isolated from servo on ch6)
+static int motorTestPhase = 1;  // START on Phase B ONLY for diagnosis
+static uint32_t nextMotorDirSwitchMs = 0;
 
 void adc_cali_init()
 {
@@ -521,6 +532,34 @@ uint16_t throttleToInterval(int16_t thr) {
   return BLINK_MAX_MS - (uint32_t)(BLINK_MAX_MS - BLINK_MIN_MS) * a / 1000;
 }
 
+void setMotorAllInputsLow() {
+  ledcWrite(CH_PWM_A, 0);
+  ledcWrite(CH_PWM_B, 0);
+
+  digitalWrite(PIN_INLA, LOW);
+  digitalWrite(PIN_INLB, LOW);
+  digitalWrite(PIN_INHC, LOW);
+  digitalWrite(PIN_INLC, LOW);
+}
+
+void applyMotorTestPhase(int phase) {
+  setMotorAllInputsLow();
+  delayMicroseconds(200);
+
+  if (phase == 0) {
+    ledcWrite(CH_PWM_A, PWM_DUTY);
+    ledcWrite(CH_PWM_B, 0);
+    Serial.printf("[DRV] Motor DIAG: Phase A active (PIN_INHA=%d, CH=%d duty=%d)\n", PIN_INHA, CH_PWM_A, PWM_DUTY);
+  } else if (phase == 1) {
+    ledcWrite(CH_PWM_A, 0);
+    ledcWrite(CH_PWM_B, PWM_DUTY);
+    Serial.printf("[DRV] Motor DIAG: Phase B active (PIN_INHB=%d, CH=%d duty=%d)\n", PIN_INHB, CH_PWM_B, PWM_DUTY);
+  } else {
+    setMotorAllInputsLow();
+    Serial.println("[DRV] Motor DIAG: All off");
+  }
+}
+
 // ----------------- Servo-Ausgabe -------------
 static bool g_useTimerFallback = false;
 
@@ -682,16 +721,28 @@ void setup(){
     Serial.printf("[DRV] Reg 0x%X = 0x%03X\n", reg, val);
   }
 
-  // LEDC: attach only INHA to PWM, others forced low
-  ledcSetup(CH_PWM, PWM_FREQ, PWM_BITS);
-  ledcAttachPin(18, CH_PWM);
-  ledcWrite(CH_PWM, PWM_DUTY);
+  pinMode(PIN_INHA, OUTPUT); digitalWrite(PIN_INHA, LOW);
+  pinMode(PIN_INLA, OUTPUT); digitalWrite(PIN_INLA, LOW);
+  pinMode(PIN_INHB, OUTPUT); digitalWrite(PIN_INHB, LOW);
+  pinMode(PIN_INLB, OUTPUT); digitalWrite(PIN_INLB, LOW);
+  pinMode(PIN_INHC, OUTPUT); digitalWrite(PIN_INHC, LOW);
+  pinMode(PIN_INLC, OUTPUT); digitalWrite(PIN_INLC, LOW);
 
-  pinMode(8, OUTPUT);  digitalWrite(8, LOW);  // INLA
-  pinMode(3, OUTPUT);  digitalWrite(3, LOW);  // INHB
-  pinMode(9, OUTPUT);  digitalWrite(9, LOW);  // INLB
-  pinMode(10, OUTPUT); digitalWrite(10, LOW); // INHC
-  pinMode(11, OUTPUT); digitalWrite(11, LOW); // INLC
+  bool setup_a = ledcSetup(CH_PWM_A, PWM_FREQ, PWM_BITS);
+  bool setup_b = ledcSetup(CH_PWM_B, PWM_FREQ, PWM_BITS);
+  ledcAttachPin(PIN_INHA, CH_PWM_A);
+  ledcAttachPin(PIN_INHB, CH_PWM_B);
+  
+  Serial.printf("[DRV] LEDC Setup A: %s, B: %s | Attached A->CH%d, B->CH%d at %u Hz\n",
+    setup_a ? "OK" : "FAIL", setup_b ? "OK" : "FAIL",
+    CH_PWM_A, CH_PWM_B, PWM_FREQ);
+  
+  ledcWrite(CH_PWM_A, 0);
+  ledcWrite(CH_PWM_B, 0);
+
+  motorTestPhase = 0;
+  applyMotorTestPhase(motorTestPhase);
+  nextMotorDirSwitchMs = millis() + MOTOR_DIR_SWITCH_MS;
 
   // Initialize ADC for battery monitoring
   gpio_config_t io_conf = {};
@@ -810,11 +861,20 @@ void loop(){
   // Battery monitoring
   batterie_loop();
 
-  // DRV8323S Status check every loop iteration
-  uint16_t drvFault1 = drv.readFault1();
-  uint16_t drvFault2 = drv.readFault2();
-  bool faultActive   = drv.hasFault();
+  // Motor diagnostic: cycle through phases A, B, off; 5s each
+  uint32_t nowMotor = millis();
+  if (nowMotor >= nextMotorDirSwitchMs) {
+    motorTestPhase = (motorTestPhase + 1) % 3;
+    applyMotorTestPhase(motorTestPhase);
+    nextMotorDirSwitchMs = nowMotor + MOTOR_DIR_SWITCH_MS;
+    Serial.printf("[DRV] Next test phase in %lu ms\n", (unsigned long)MOTOR_DIR_SWITCH_MS);
+  }
+
+  // DRV8323S status check only when nFAULT is active.
+  bool faultActive = drv.hasFault();
   if (faultActive) {
+    uint16_t drvFault1 = drv.readFault1();
+    uint16_t drvFault2 = drv.readFault2();
     Serial.printf("[DRV] Fault1: 0x%03X | Fault2: 0x%03X | nFAULT: LOW (Fault detected)\n",
                   drvFault1, drvFault2);
     drv.clearFaults();
