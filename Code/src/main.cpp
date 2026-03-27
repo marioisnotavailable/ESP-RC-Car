@@ -11,6 +11,7 @@
 #include <driver/adc.h>
 #include <esp_adc_cal.h>
 #include <WiFiUdp.h>
+#include <esp32FOTA.hpp>
 #include "drv8323.h"
 
 // ========== BATTERIEMONITORING ==========
@@ -181,6 +182,22 @@ void batterie_loop()
 #define BEACON_INTERVAL_MS        2000UL   // UDP-Discovery-Beacon
 #define SCAN_DWELL_MS             40       // passives Scannen pro Kanal
 #define AP_SSID_PREFIX            "ESP-RC-Car-Setup-"
+
+// ----------------- ESP FOTA ------------------
+#ifndef FOTA_FIRMWARE_TYPE
+#define FOTA_FIRMWARE_TYPE        "esp-rc-car"
+#endif
+#ifndef FOTA_CURRENT_VERSION
+#define FOTA_CURRENT_VERSION      "v0.1.0"  // align with GitHub release tag/name
+#endif
+#ifndef FOTA_MANIFEST_URL
+#define FOTA_MANIFEST_URL         "https://github.com/marioisnotavailable/ESP-RC-Car/releases/latest/download/firmware.json"
+#endif
+#ifndef FOTA_CHECK_INTERVAL_MS
+#define FOTA_CHECK_INTERVAL_MS    300000UL
+#endif
+static uint32_t nextFotaCheckMs = 0;
+static esp32FOTA espFOTA(FOTA_FIRMWARE_TYPE, FOTA_CURRENT_VERSION);
 
 // ----------------- WLAN / AP -----------------
 
@@ -807,6 +824,14 @@ void setup(){
   if (connected) {
     IPAddress ip = WiFi.localIP();
     Serial.printf("[WiFi] Connected. IP=%s\n", ip.toString().c_str());
+
+    if (FOTA_MANIFEST_URL[0] != '\0') {
+      espFOTA.setManifestURL(FOTA_MANIFEST_URL);
+      nextFotaCheckMs = millis() + 15000UL;
+      Serial.printf("[FOTA] Manifest URL set: %s\n", FOTA_MANIFEST_URL);
+    } else {
+      Serial.println("[FOTA] Disabled: FOTA_MANIFEST_URL is empty");
+    }
   } else {
     // Either requested by multi-reset or failed to connect -> open AP portal
     startAPPortal();
@@ -849,6 +874,22 @@ void loop(){
 
   // UDP discovery
   udpDiscoveryHandle();
+
+  // Periodic FOTA check only while connected as station.
+  if (FOTA_MANIFEST_URL[0] != '\0' && WiFi.status() == WL_CONNECTED && (WiFi.getMode() & WIFI_MODE_STA)) {
+    uint32_t nowFota = millis();
+    if (nowFota >= nextFotaCheckMs) {
+      nextFotaCheckMs = nowFota + FOTA_CHECK_INTERVAL_MS;
+      Serial.println("[FOTA] Checking for update...");
+      bool updateAvailable = espFOTA.execHTTPcheck();
+      if (updateAvailable) {
+        Serial.println("[FOTA] Update found, starting OTA...");
+        espFOTA.execOTA();
+      } else {
+        Serial.println("[FOTA] No update available");
+      }
+    }
+  }
 
   // Battery monitoring
   batterie_loop();
