@@ -76,7 +76,7 @@ static constexpr uint8_t PIN_INLC = 11;
 // Direction test: run a few seconds one way, then reverse.
 static constexpr uint32_t MOTOR_DIR_SWITCH_MS = 5000UL;  // Diagnostic: 5s Phase B only
 static const int CH_PWM_A = 0;  // Timer 0
-static const int CH_PWM_B = 7;  // Timer 1 (isolated from servo on ch6)
+static const int CH_PWM_B = 2;  // Timer 1 (ch2/3 share Timer 1, isolated from servo on ch6/7 = Timer 3)
 static int motorTestPhase = 1;  // START on Phase B ONLY for diagnosis
 static uint32_t nextMotorDirSwitchMs = 0;
 
@@ -822,15 +822,7 @@ void setup(){
   // Initialize battery monitoring
   batterie_setup();
 
-  // Servo initialisieren (immer aktiv, auch in AP/Setup-Modus)
-  if (!servoLEDCInit()) {
-    servoFallbackInit();
-  } else {
-    g_useTimerFallback = false;
-  }
-  // Servo Mitte
-  currentServoUs = SERVO_MID_US;
-  servoWriteMicrosecondsUnified(SERVO_MID_US);
+  // Servo deaktiviert (LENKUNG_PIN = 5 kollidiert mit PIN_DRV_MISO)
 
   lastCmdMs = millis();
   nextServoUpdateMs = millis(); // sofort erste Ausgabe erlauben
@@ -906,15 +898,7 @@ void loop(){
     digitalWrite(LED_PIN, ledState ? HIGH : LOW);
   }
 
-  // ---- Lenkung: filtern & mappen (keine Ausgabe) ----
-  applySteering();
-
-  // ---- Servo nur alle 20 ms aktualisieren (50 Hz) ----
-  uint32_t nowMs = millis();
-  if (nowMs >= nextServoUpdateMs) {
-    nextServoUpdateMs = nowMs + 20;   // nächster Frame
-    servoWriteMicrosecondsUnified(currentServoUs);
-  }
+  // Servo deaktiviert
 
 
   // Debug optional:
