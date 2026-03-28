@@ -1,8 +1,0 @@
-{
-  "type": "esp-rc-car",
-  "version": "v0.1.0",
-  "host": "github.com",
-  "port": 443,
-  "bin": "/marioisnotavailable/ESP-RC-Car/releases/latest/download/esp-rc-car.bin",
-  "littlefs": "/marioisnotavailable/ESP-RC-Car/releases/latest/download/esp-rc-car-littlefs.bin"
-}
