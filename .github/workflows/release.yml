@@ -1,0 +1,46 @@
+name: Build & Upload Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Code
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Inject version from release tag
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          echo "Building with FOTA_CURRENT_VERSION=${TAG}"
+          sed -i '/^build_flags/a\    -DFOTA_CURRENT_VERSION=\\"'"${TAG}"'\\"' platformio.ini
+
+      - name: Build firmware
+        run: pio run
+
+      - name: Build LittleFS
+        run: pio run --target buildfs
+
+      - name: Rename binaries
+        run: |
+          cp .pio/build/esp32dev/firmware.bin .pio/build/esp32dev/esp-rc-car.bin
+          cp .pio/build/esp32dev/littlefs.bin .pio/build/esp32dev/esp-rc-car-littlefs.bin
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            Code/.pio/build/esp32dev/esp-rc-car.bin
+            Code/.pio/build/esp32dev/esp-rc-car-littlefs.bin

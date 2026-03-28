@@ -185,7 +185,7 @@ void batterie_loop()
 
 // ----------------- OTA ------------------
 #ifndef FOTA_CURRENT_VERSION
-#define FOTA_CURRENT_VERSION      "v0.1.0"  // align with GitHub release tag_name
+#define FOTA_CURRENT_VERSION      "v0.0.0"  // overridden by CI build flag
 #endif
 #ifndef FOTA_CHECK_INTERVAL_MS
 #define FOTA_CHECK_INTERVAL_MS    300000UL
@@ -715,6 +715,7 @@ static uint32_t nextBattSendMs = 0;
 void setup(){
   Serial.begin(115200);
   delay(1000);
+  Serial.printf("[BOOT] Firmware version: %s\n", FOTA_CURRENT_VERSION);
   Serial.println("[BOOT] Initializing DRV8323, Battery Monitor, WiFi & Control...");
   
   // Initialize DRV8323S motor driver
