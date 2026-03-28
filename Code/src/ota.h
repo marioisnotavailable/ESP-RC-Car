@@ -8,9 +8,9 @@
 #include <Update.h>
 #include <ArduinoJson.h>
 
-#define FOTA_API_URL "https://api.github.com/repos/marioisnotavailable/ESP-RC-Car-test/releases/latest"
-#define FOTA_FW_URL  "https://github.com/marioisnotavailable/ESP-RC-Car-test/releases/latest/download/esp-rc-car.bin"
-#define FOTA_FS_URL  "https://github.com/marioisnotavailable/ESP-RC-Car-test/releases/latest/download/esp-rc-car-littlefs.bin"
+#define FOTA_API_URL "https://api.github.com/repos/marioisnotavailable/ESP-RC-Car/releases/latest"
+#define FOTA_FW_URL  "https://github.com/marioisnotavailable/ESP-RC-Car/releases/latest/download/esp-rc-car.bin"
+#define FOTA_FS_URL  "https://github.com/marioisnotavailable/ESP-RC-Car/releases/latest/download/esp-rc-car-littlefs.bin"
 
 // ---- Semantic version comparison ----
 struct SemVer { int major, minor, patch; };
