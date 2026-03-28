@@ -11,6 +11,8 @@ jobs:
       run:
         working-directory: Code
 
+    if: github.event.release.target_commitish == 'espFOTA'
+
     steps:
       - uses: actions/checkout@v4
 
