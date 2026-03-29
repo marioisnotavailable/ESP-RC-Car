@@ -55,7 +55,7 @@ static DeviceSettings settings = {
 };
 
 static void loadSettings() {
-  prefsSettings.begin("cfg", true);
+  prefsSettings.begin("cfg", false);
   settings.otaEnabled      = prefsSettings.getBool("otaOn", true);
   settings.otaIntervalMs   = prefsSettings.getULong("otaInt", FOTA_CHECK_DEFAULT_MS);
   settings.wifiTxPower     = prefsSettings.getUChar("txPow", 3);
