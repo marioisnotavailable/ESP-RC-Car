@@ -44,6 +44,8 @@ struct DeviceSettings {
   float    battOffV;          // shutdown voltage
   // Motor
   uint8_t  maxThrottlePct;    // 10..100
+  // ADC calibration
+  float    adcCorrFactor;     // multiplied with measured voltage
 };
 
 static DeviceSettings settings = {
@@ -51,7 +53,8 @@ static DeviceSettings settings = {
   3, 400, 2000, "ESP-RC-Car-Setup-",                 // Network
   false, 1.0f, 30, 0.85f,                            // Steering
   7.9f, 7.4f,                                        // Battery
-  100                                                 // Motor
+  100,                                                // Motor
+  1.0f                                                // ADC calibration
 };
 
 static void loadSettings() {
@@ -71,6 +74,7 @@ static void loadSettings() {
   settings.battWarnV       = prefsSettings.getFloat("bWarn", 7.9f);
   settings.battOffV        = prefsSettings.getFloat("bOff", 7.4f);
   settings.maxThrottlePct  = prefsSettings.getUChar("maxThr", 100);
+  settings.adcCorrFactor   = prefsSettings.getFloat("adcCorr", 1.0f);
   prefsSettings.end();
   fotaCheckIntervalMs = settings.otaIntervalMs;
 }
@@ -90,6 +94,7 @@ static void saveSettings() {
   prefsSettings.putFloat("bWarn", settings.battWarnV);
   prefsSettings.putFloat("bOff", settings.battOffV);
   prefsSettings.putUChar("maxThr", settings.maxThrottlePct);
+  prefsSettings.putFloat("adcCorr", settings.adcCorrFactor);
   prefsSettings.end();
   fotaCheckIntervalMs = settings.otaIntervalMs;
 }
@@ -228,7 +233,7 @@ void batterie_loop()
     }
 
     float vAdc  = (float)(mvAccum / count) / 1000.0f;
-    float vBatt_float = vAdc * DIVIDER_RATIO;
+    float vBatt_float = vAdc * DIVIDER_RATIO * settings.adcCorrFactor;
 
     // Berechne Batterieprozentage (8.39V = 100%, 7.5V = 0%)
     float percent = ((vBatt_float - BATT_MIN_VOLTAGE) / BATT_VOLTAGE_RANGE) * 100.0f;
@@ -600,6 +605,8 @@ void startAPPortal() {
     j += "\"battWarnV\":" + String(settings.battWarnV, 1) + ",";
     j += "\"battOffV\":" + String(settings.battOffV, 1) + ",";
     j += "\"maxThrottlePct\":" + String(settings.maxThrottlePct) + ",";
+    j += "\"adcCorrFactor\":" + String(settings.adcCorrFactor, 4) + ",";
+    j += "\"vBatt\":" + String(vBatt_float_last, 2) + ",";
     j += "\"version\":\"" + String(FOTA_CURRENT_VERSION) + "\"";
     j += "}";
     http.send(200, "application/json", j);
@@ -636,6 +643,16 @@ void startAPPortal() {
       settings.battOffV = http.arg("battOffV").toFloat();
     if (http.hasArg("maxThrottlePct"))
       settings.maxThrottlePct = constrain(http.arg("maxThrottlePct").toInt(), 10, 100);
+    if (http.hasArg("adcCorrFactor")) {
+      float f = http.arg("adcCorrFactor").toFloat();
+      if (f > 0.5f && f < 2.0f) settings.adcCorrFactor = f;
+    }
+    if (http.hasArg("adcRealVoltage") && vBatt_float_last > 0.1f) {
+      float realV = http.arg("adcRealVoltage").toFloat();
+      if (realV > 1.0f && realV < 15.0f) {
+        settings.adcCorrFactor = realV / (vBatt_float_last / settings.adcCorrFactor);
+      }
+    }
     saveSettings();
     http.send(200, "application/json", "{\"ok\":true}");
   });
@@ -1040,10 +1057,13 @@ void loop(){
   uint32_t now = millis();
   if (now >= nextBattSendMs) {
     nextBattSendMs = now + BATT_SEND_INTERVAL_MS;
-    // Format: "BATT:XX" where XX is battery percentage (0-100)
-    char battMsg[16];
+    char battMsg[64];
     snprintf(battMsg, sizeof(battMsg), "BATT:%d", batteryPercent);
     ws.broadcastTXT((uint8_t*)battMsg, strlen(battMsg));
+    // ADC details for config page
+    char adcMsg[64];
+    snprintf(adcMsg, sizeof(adcMsg), "ADC:%.3f,%.2f,%d", vAdc_last, vBatt_float_last, sampleCount_last);
+    ws.broadcastTXT((uint8_t*)adcMsg, strlen(adcMsg));
   }
   if (millis() - lastCmdMs > settings.failsafeMs) {
     lastCmd.steer = 0; // optional: später auch throttle failsafen

@@ -162,7 +162,7 @@ window.addEventListener('DOMContentLoaded', () => {
   apiGetSettings().then(s => {
     cfgVersion.textContent = s.version;
     cfg['cfg-ota'].value = s.otaEnabled ? '1' : '0';
-    cfg['cfg-otaInterval'].value = String(s.otaIntervalMs);
+    cfg['cfg-otaInterval'].value = Math.round(s.otaIntervalMs / 60000);
     cfg['cfg-txPower'].value = String(s.wifiTxPower);
     cfg['cfg-failsafe'].value = String(s.failsafeMs);
     cfg['cfg-beacon'].value = String(s.beaconIntervalMs);
@@ -174,13 +174,15 @@ window.addEventListener('DOMContentLoaded', () => {
     cfg['cfg-battWarn'].value = s.battWarnV;
     cfg['cfg-battOff'].value = s.battOffV;
     cfg['cfg-maxThrottle'].value = String(s.maxThrottlePct);
+    document.getElementById('cfg-adcCorr').textContent = s.adcCorrFactor.toFixed(4);
+    document.getElementById('cfg-vBatt').textContent = s.vBatt.toFixed(2);
   }).catch(() => {});
 
   cfgSave.addEventListener('click', async () => {
     cfgMsg.textContent = '';
     const res = await apiSaveSettings({
       otaEnabled: cfg['cfg-ota'].value,
-      otaIntervalMs: cfg['cfg-otaInterval'].value,
+      otaIntervalMs: Math.max(1, Math.min(1440, parseInt(cfg['cfg-otaInterval'].value))) * 60000,
       wifiTxPower: cfg['cfg-txPower'].value,
       failsafeMs: cfg['cfg-failsafe'].value,
       beaconIntervalMs: cfg['cfg-beacon'].value,
@@ -191,7 +193,7 @@ window.addEventListener('DOMContentLoaded', () => {
       steerFilter: cfg['cfg-steerFilter'].value,
       battWarnV: cfg['cfg-battWarn'].value,
       battOffV: cfg['cfg-battOff'].value,
-      maxThrottlePct: cfg['cfg-maxThrottle'].value
+      maxThrottlePct: Math.max(10, Math.min(100, parseInt(cfg['cfg-maxThrottle'].value)))
     });
     if (res && res.ok) {
       cfgMsg.textContent = 'Settings saved';
@@ -199,6 +201,19 @@ window.addEventListener('DOMContentLoaded', () => {
     } else {
       cfgMsg.textContent = 'Failed to save';
       cfgMsg.classList.add('err');
+    }
+  });
+
+  document.getElementById('cfg-calibrate').addEventListener('click', async () => {
+    const realV = document.getElementById('cfg-realVoltage').value;
+    if (!realV) return;
+    const res = await apiSaveSettings({ adcRealVoltage: realV });
+    if (res && res.ok) {
+      const s = await apiGetSettings();
+      document.getElementById('cfg-adcCorr').textContent = s.adcCorrFactor.toFixed(4);
+      document.getElementById('cfg-vBatt').textContent = s.vBatt.toFixed(2);
+      cfgMsg.textContent = 'Calibrated';
+      cfgMsg.classList.remove('err');
     }
   });
 
