@@ -9,6 +9,12 @@ button.right { float: right; }
 .msg { font-size: 0.95rem; color: #0a0; min-height: 1.2em; }
 .msg.err { color: #b00; }
 
+.card h4 { margin: 14px 0 6px; color: #555; font-size: 0.95rem; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+.card h4:first-of-type { margin-top: 0; }
+.setting { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #eee; }
+.setting label { font-weight: 500; }
+.setting select, .setting span, .setting input { font-size: 0.95rem; }
+
 table { border-collapse: collapse; width: 100%; }
 th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
 th { background: #fafafa; }

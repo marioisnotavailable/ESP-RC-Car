@@ -155,12 +155,12 @@ void batterie_loop()
     mvAccum = 0;
     count   = 0;
 
-    if (vBatt_float <= POWER_OFF_MODE) {
+    if (vBatt_float <= settings.battOffV) {
         lowVoltageHits++;
         Serial.printf("[WARN] Unterspannung %d/%d\n", lowVoltageHits, LOW_CONFIRM_COUNT);
     } else {
         lowVoltageHits = 0;
-        if (vBatt_float <= POWER_WARN_MODE) {
+        if (vBatt_float <= settings.battWarnV) {
             Serial.println("[WARN] Batterie niedrig!");
         }
     }
@@ -187,10 +187,90 @@ void batterie_loop()
 #ifndef FOTA_CURRENT_VERSION
 #define FOTA_CURRENT_VERSION      "v0.0.0"  // overridden by CI build flag
 #endif
-#ifndef FOTA_CHECK_INTERVAL_MS
-#define FOTA_CHECK_INTERVAL_MS    300000UL
-#endif
+#define FOTA_CHECK_DEFAULT_MS     300000UL
+static uint32_t fotaCheckIntervalMs = FOTA_CHECK_DEFAULT_MS;
 static uint32_t nextFotaCheckMs = 0;
+
+// ----------------- Device Settings (NVS) ------------------
+Preferences prefsSettings;
+
+struct DeviceSettings {
+  // OTA
+  bool     otaEnabled;
+  uint32_t otaIntervalMs;
+  // Network
+  uint8_t  wifiTxPower;       // 0=low, 1=med, 2=high, 3=max
+  uint16_t failsafeMs;
+  uint32_t beaconIntervalMs;
+  char     apPrefix[32];
+  // Steering
+  bool     steerInvert;
+  float    steerGain;         // 0.3 .. 1.5
+  uint16_t steerDeadzone;     // 0 .. 200
+  float    steerFilter;       // 0.5 .. 0.95 (FILTER_ALPHA)
+  // Battery
+  float    battWarnV;         // warning voltage
+  float    battOffV;          // shutdown voltage
+  // Motor
+  uint8_t  maxThrottlePct;    // 10..100
+};
+
+static DeviceSettings settings = {
+  true, FOTA_CHECK_DEFAULT_MS,                       // OTA
+  3, 400, 2000, "ESP-RC-Car-Setup-",                 // Network
+  false, 1.0f, 30, 0.85f,                            // Steering
+  7.9f, 7.4f,                                        // Battery
+  100                                                 // Motor
+};
+
+static void loadSettings() {
+  prefsSettings.begin("cfg", true);
+  settings.otaEnabled      = prefsSettings.getBool("otaOn", true);
+  settings.otaIntervalMs   = prefsSettings.getULong("otaInt", FOTA_CHECK_DEFAULT_MS);
+  settings.wifiTxPower     = prefsSettings.getUChar("txPow", 3);
+  settings.failsafeMs      = prefsSettings.getUShort("failMs", 400);
+  settings.beaconIntervalMs= prefsSettings.getULong("beacInt", 2000);
+  String ap = prefsSettings.getString("apPfx", "ESP-RC-Car-Setup-");
+  strncpy(settings.apPrefix, ap.c_str(), sizeof(settings.apPrefix)-1);
+  settings.apPrefix[sizeof(settings.apPrefix)-1] = '\0';
+  settings.steerInvert     = prefsSettings.getBool("stInv", false);
+  settings.steerGain       = prefsSettings.getFloat("stGain", 1.0f);
+  settings.steerDeadzone   = prefsSettings.getUShort("stDz", 30);
+  settings.steerFilter     = prefsSettings.getFloat("stFilt", 0.85f);
+  settings.battWarnV       = prefsSettings.getFloat("bWarn", 7.9f);
+  settings.battOffV        = prefsSettings.getFloat("bOff", 7.4f);
+  settings.maxThrottlePct  = prefsSettings.getUChar("maxThr", 100);
+  prefsSettings.end();
+  fotaCheckIntervalMs = settings.otaIntervalMs;
+}
+
+static void saveSettings() {
+  prefsSettings.begin("cfg", false);
+  prefsSettings.putBool("otaOn", settings.otaEnabled);
+  prefsSettings.putULong("otaInt", settings.otaIntervalMs);
+  prefsSettings.putUChar("txPow", settings.wifiTxPower);
+  prefsSettings.putUShort("failMs", settings.failsafeMs);
+  prefsSettings.putULong("beacInt", settings.beaconIntervalMs);
+  prefsSettings.putString("apPfx", settings.apPrefix);
+  prefsSettings.putBool("stInv", settings.steerInvert);
+  prefsSettings.putFloat("stGain", settings.steerGain);
+  prefsSettings.putUShort("stDz", settings.steerDeadzone);
+  prefsSettings.putFloat("stFilt", settings.steerFilter);
+  prefsSettings.putFloat("bWarn", settings.battWarnV);
+  prefsSettings.putFloat("bOff", settings.battOffV);
+  prefsSettings.putUChar("maxThr", settings.maxThrottlePct);
+  prefsSettings.end();
+  fotaCheckIntervalMs = settings.otaIntervalMs;
+}
+
+static void applyWifiTxPower() {
+  switch (settings.wifiTxPower) {
+    case 0: WiFi.setTxPower(WIFI_POWER_8_5dBm);  break;
+    case 1: WiFi.setTxPower(WIFI_POWER_15dBm);    break;
+    case 2: WiFi.setTxPower(WIFI_POWER_17dBm);    break;
+    default: WiFi.setTxPower(WIFI_POWER_19_5dBm); break;
+  }
+}
 
 // ----------------- WLAN / AP -----------------
 
@@ -287,7 +367,7 @@ void udpDiscoveryHandle() {
   // Optional: periodic beacon (broadcast) every 2s to reduce discover latency
   uint32_t now = millis();
   if (now >= nextBeaconAtMs) {
-    nextBeaconAtMs = now + BEACON_INTERVAL_MS;
+    nextBeaconAtMs = now + settings.beaconIntervalMs;
     IPAddress ip = currentControlIP();
     char msg[96];
     snprintf(msg, sizeof(msg), "%sws://%s:81/", DISCOVERY_RESP_PREFIX, ip.toString().c_str());
@@ -421,7 +501,7 @@ bool serveFile(const String &path) {
 void startAPPortal() {
   startConfigPortal = true;
 
-  String apSsid = String(AP_SSID_PREFIX) + String((uint32_t)(ESP.getEfuseMac() & 0xFFFFFF), HEX);
+  String apSsid = String(settings.apPrefix) + String((uint32_t)(ESP.getEfuseMac() & 0xFFFFFF), HEX);
   WiFi.mode(WIFI_AP_STA); // allow scanning while AP is active
   WiFi.persistent(false);
   WiFi.setSleep(false);
@@ -502,6 +582,62 @@ void startAPPortal() {
     http.send(200, "application/json", "{\"ok\":true}");
     delay(200);
     ESP.restart();
+  });
+
+  // Settings API
+  http.on("/api/settings", HTTP_GET, [](){
+    String j = "{";
+    j += "\"otaEnabled\":" + String(settings.otaEnabled ? "true" : "false") + ",";
+    j += "\"otaIntervalMs\":" + String(settings.otaIntervalMs) + ",";
+    j += "\"wifiTxPower\":" + String(settings.wifiTxPower) + ",";
+    j += "\"failsafeMs\":" + String(settings.failsafeMs) + ",";
+    j += "\"beaconIntervalMs\":" + String(settings.beaconIntervalMs) + ",";
+    j += "\"apPrefix\":\"" + String(settings.apPrefix) + "\",";
+    j += "\"steerInvert\":" + String(settings.steerInvert ? "true" : "false") + ",";
+    j += "\"steerGain\":" + String(settings.steerGain, 2) + ",";
+    j += "\"steerDeadzone\":" + String(settings.steerDeadzone) + ",";
+    j += "\"steerFilter\":" + String(settings.steerFilter, 2) + ",";
+    j += "\"battWarnV\":" + String(settings.battWarnV, 1) + ",";
+    j += "\"battOffV\":" + String(settings.battOffV, 1) + ",";
+    j += "\"maxThrottlePct\":" + String(settings.maxThrottlePct) + ",";
+    j += "\"version\":\"" + String(FOTA_CURRENT_VERSION) + "\"";
+    j += "}";
+    http.send(200, "application/json", j);
+  });
+  http.on("/api/settings", HTTP_POST, [](){
+    if (http.hasArg("otaEnabled"))
+      settings.otaEnabled = (http.arg("otaEnabled") == "1");
+    if (http.hasArg("otaIntervalMs"))
+      settings.otaIntervalMs = http.arg("otaIntervalMs").toInt();
+    if (http.hasArg("wifiTxPower")) {
+      settings.wifiTxPower = http.arg("wifiTxPower").toInt();
+      applyWifiTxPower();
+    }
+    if (http.hasArg("failsafeMs"))
+      settings.failsafeMs = http.arg("failsafeMs").toInt();
+    if (http.hasArg("beaconIntervalMs"))
+      settings.beaconIntervalMs = http.arg("beaconIntervalMs").toInt();
+    if (http.hasArg("apPrefix")) {
+      String ap = http.arg("apPrefix");
+      strncpy(settings.apPrefix, ap.c_str(), sizeof(settings.apPrefix)-1);
+      settings.apPrefix[sizeof(settings.apPrefix)-1] = '\0';
+    }
+    if (http.hasArg("steerInvert"))
+      settings.steerInvert = (http.arg("steerInvert") == "1");
+    if (http.hasArg("steerGain"))
+      settings.steerGain = constrain(http.arg("steerGain").toFloat(), 0.3f, 1.5f);
+    if (http.hasArg("steerDeadzone"))
+      settings.steerDeadzone = constrain(http.arg("steerDeadzone").toInt(), 0, 200);
+    if (http.hasArg("steerFilter"))
+      settings.steerFilter = constrain(http.arg("steerFilter").toFloat(), 0.5f, 0.95f);
+    if (http.hasArg("battWarnV"))
+      settings.battWarnV = http.arg("battWarnV").toFloat();
+    if (http.hasArg("battOffV"))
+      settings.battOffV = http.arg("battOffV").toFloat();
+    if (http.hasArg("maxThrottlePct"))
+      settings.maxThrottlePct = constrain(http.arg("maxThrottlePct").toInt(), 10, 100);
+    saveSettings();
+    http.send(200, "application/json", "{\"ok\":true}");
   });
 
   // Default: redirect any unknown path to the root to help with captive portal
@@ -665,15 +801,15 @@ void servoWriteMicrosecondsUnified(int targetUs) {
 void applySteering() {
   int s = lastCmd.steer;
 
-  if (abs(s) < SERVO_DEADZONE) s = 0;
-  if (SERVO_INVERT) s = -s;
+  if (abs(s) < (int)settings.steerDeadzone) s = 0;
+  if (settings.steerInvert) s = -s;
 
   // EMA-Filter auf -1000..+1000
-  steerFilt = FILTER_ALPHA * steerFilt + (1.0f - FILTER_ALPHA) * (float)s;
+  steerFilt = settings.steerFilter * steerFilt + (1.0f - settings.steerFilter) * (float)s;
 
   // Map auf µs
   float halfSpan = 0.5f * (float)(SERVO_MAX_US - SERVO_MIN_US);
-  int targetUs = SERVO_MID_US + (int)(steerFilt * SERVO_GAIN * (halfSpan / 1000.0f));
+  int targetUs = SERVO_MID_US + (int)(steerFilt * settings.steerGain * (halfSpan / 1000.0f));
   currentServoUs = constrain(targetUs, SERVO_MIN_US, SERVO_MAX_US);
 }
 
@@ -693,7 +829,8 @@ void onWs(uint8_t num, WStype_t type, uint8_t* payload, size_t len) {
     int thr=0, st=0, fl=0;
     int r = sscanf(buf, "%d,%d,%d", &thr, &st, &fl);
     if (r == 3) {
-      lastCmd.throttle = (int16_t)constrain(thr, -1000, 1000);
+      int16_t maxThr = (int16_t)(1000L * settings.maxThrottlePct / 100);
+      lastCmd.throttle = (int16_t)constrain(thr, -maxThr, maxThr);
       lastCmd.steer    = (int16_t)constrain(st,  -1000, 1000);
       lastCmd.flags    = (uint8_t)fl;
       lastCmdMs = millis(); // Failsafe reset
@@ -791,6 +928,9 @@ void setup(){
     listFS();
   }
 
+  // Load device settings from NVS
+  loadSettings();
+
   // Load saved WiFi networks
   loadSavedNetworks();
 
@@ -800,7 +940,7 @@ void setup(){
     WiFi.persistent(false);
     WiFi.setSleep(false);
     WiFi.mode(WIFI_STA);
-    WiFi.setTxPower(WIFI_POWER_19_5dBm);
+    applyWifiTxPower();
     // Add networks to WiFiMulti
     for (auto &n : savedNets) {
       wifiMulti.addAP(n.ssid.c_str(), n.pass.c_str());
@@ -864,11 +1004,11 @@ void loop(){
   // UDP discovery
   udpDiscoveryHandle();
 
-  // Periodic OTA check only while connected as station.
-  if (WiFi.status() == WL_CONNECTED && (WiFi.getMode() & WIFI_MODE_STA)) {
+  // Periodic OTA check only while connected as station and OTA enabled.
+  if (settings.otaEnabled && WiFi.status() == WL_CONNECTED && (WiFi.getMode() & WIFI_MODE_STA)) {
     uint32_t nowFota = millis();
     if (nowFota >= nextFotaCheckMs) {
-      nextFotaCheckMs = nowFota + FOTA_CHECK_INTERVAL_MS;
+      nextFotaCheckMs = nowFota + fotaCheckIntervalMs;
       Serial.println("[FOTA] Checking for update...");
       fotaCheckAndUpdate(FOTA_CURRENT_VERSION);
     }
@@ -905,7 +1045,7 @@ void loop(){
     snprintf(battMsg, sizeof(battMsg), "BATT:%d", batteryPercent);
     ws.broadcastTXT((uint8_t*)battMsg, strlen(battMsg));
   }
-  if (millis() - lastCmdMs > FAILSAFE_MS) {
+  if (millis() - lastCmdMs > settings.failsafeMs) {
     lastCmd.steer = 0; // optional: später auch throttle failsafen
   }
 

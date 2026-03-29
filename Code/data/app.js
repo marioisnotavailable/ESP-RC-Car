@@ -19,6 +19,15 @@ async function apiScan() {
 async function apiReboot() {
   await fetch('/api/reboot', { method: 'POST' });
 }
+async function apiGetSettings() {
+  const r = await fetch('/api/settings');
+  return r.json();
+}
+async function apiSaveSettings(data) {
+  const body = new URLSearchParams(data);
+  const r = await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+  return r.json();
+}
 
 function renderSaved(list) {
   const tb = document.querySelector('#saved-table tbody');
@@ -138,6 +147,59 @@ window.addEventListener('DOMContentLoaded', () => {
   rebootForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     await apiReboot();
+  });
+
+  // Settings
+  const cfgIds = ['cfg-ota','cfg-otaInterval','cfg-txPower','cfg-failsafe','cfg-beacon',
+    'cfg-apPrefix','cfg-steerInvert','cfg-steerGain','cfg-steerDeadzone','cfg-steerFilter',
+    'cfg-battWarn','cfg-battOff','cfg-maxThrottle'];
+  const cfg = {};
+  cfgIds.forEach(id => cfg[id] = document.getElementById(id));
+  const cfgVersion = document.getElementById('cfg-version');
+  const cfgSave = document.getElementById('cfg-save');
+  const cfgMsg = document.getElementById('cfg-msg');
+
+  apiGetSettings().then(s => {
+    cfgVersion.textContent = s.version;
+    cfg['cfg-ota'].value = s.otaEnabled ? '1' : '0';
+    cfg['cfg-otaInterval'].value = String(s.otaIntervalMs);
+    cfg['cfg-txPower'].value = String(s.wifiTxPower);
+    cfg['cfg-failsafe'].value = String(s.failsafeMs);
+    cfg['cfg-beacon'].value = String(s.beaconIntervalMs);
+    cfg['cfg-apPrefix'].value = s.apPrefix;
+    cfg['cfg-steerInvert'].value = s.steerInvert ? '1' : '0';
+    cfg['cfg-steerGain'].value = s.steerGain;
+    cfg['cfg-steerDeadzone'].value = s.steerDeadzone;
+    cfg['cfg-steerFilter'].value = s.steerFilter;
+    cfg['cfg-battWarn'].value = s.battWarnV;
+    cfg['cfg-battOff'].value = s.battOffV;
+    cfg['cfg-maxThrottle'].value = String(s.maxThrottlePct);
+  }).catch(() => {});
+
+  cfgSave.addEventListener('click', async () => {
+    cfgMsg.textContent = '';
+    const res = await apiSaveSettings({
+      otaEnabled: cfg['cfg-ota'].value,
+      otaIntervalMs: cfg['cfg-otaInterval'].value,
+      wifiTxPower: cfg['cfg-txPower'].value,
+      failsafeMs: cfg['cfg-failsafe'].value,
+      beaconIntervalMs: cfg['cfg-beacon'].value,
+      apPrefix: cfg['cfg-apPrefix'].value,
+      steerInvert: cfg['cfg-steerInvert'].value,
+      steerGain: cfg['cfg-steerGain'].value,
+      steerDeadzone: cfg['cfg-steerDeadzone'].value,
+      steerFilter: cfg['cfg-steerFilter'].value,
+      battWarnV: cfg['cfg-battWarn'].value,
+      battOffV: cfg['cfg-battOff'].value,
+      maxThrottlePct: cfg['cfg-maxThrottle'].value
+    });
+    if (res && res.ok) {
+      cfgMsg.textContent = 'Settings saved';
+      cfgMsg.classList.remove('err');
+    } else {
+      cfgMsg.textContent = 'Failed to save';
+      cfgMsg.classList.add('err');
+    }
   });
 
   refreshAll();

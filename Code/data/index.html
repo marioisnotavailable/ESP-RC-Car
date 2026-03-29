@@ -45,6 +45,111 @@
     </section>
 
     <section class="card">
+      <h3>Settings</h3>
+
+      <h4>General</h4>
+      <div class="setting">
+        <label>Firmware Version</label>
+        <span id="cfg-version">--</span>
+      </div>
+      <div class="setting">
+        <label>Auto Update (OTA)</label>
+        <select id="cfg-ota">
+          <option value="1">Enabled</option>
+          <option value="0">Disabled</option>
+        </select>
+      </div>
+      <div class="setting">
+        <label>OTA Check Interval</label>
+        <select id="cfg-otaInterval">
+          <option value="300000">5 min</option>
+          <option value="900000">15 min</option>
+          <option value="1800000">30 min</option>
+          <option value="3600000">1 hour</option>
+        </select>
+      </div>
+
+      <h4>Network</h4>
+      <div class="setting">
+        <label>WiFi TX Power</label>
+        <select id="cfg-txPower">
+          <option value="0">Low (8.5 dBm)</option>
+          <option value="1">Medium (15 dBm)</option>
+          <option value="2">High (17 dBm)</option>
+          <option value="3">Max (19.5 dBm)</option>
+        </select>
+      </div>
+      <div class="setting">
+        <label>Failsafe Timeout</label>
+        <select id="cfg-failsafe">
+          <option value="200">200 ms</option>
+          <option value="400">400 ms</option>
+          <option value="800">800 ms</option>
+          <option value="1500">1500 ms</option>
+        </select>
+      </div>
+      <div class="setting">
+        <label>Discovery Beacon</label>
+        <select id="cfg-beacon">
+          <option value="1000">1 s</option>
+          <option value="2000">2 s</option>
+          <option value="5000">5 s</option>
+          <option value="10000">10 s</option>
+        </select>
+      </div>
+      <div class="setting">
+        <label>AP Name Prefix</label>
+        <input id="cfg-apPrefix" type="text" maxlength="24" style="width:160px" />
+      </div>
+
+      <h4>Steering</h4>
+      <div class="setting">
+        <label>Invert Steering</label>
+        <select id="cfg-steerInvert">
+          <option value="0">Normal</option>
+          <option value="1">Inverted</option>
+        </select>
+      </div>
+      <div class="setting">
+        <label>Steering Gain</label>
+        <input id="cfg-steerGain" type="number" min="0.3" max="1.5" step="0.1" style="width:80px" />
+      </div>
+      <div class="setting">
+        <label>Steering Deadzone</label>
+        <input id="cfg-steerDeadzone" type="number" min="0" max="200" step="5" style="width:80px" />
+      </div>
+      <div class="setting">
+        <label>Steering Filter</label>
+        <input id="cfg-steerFilter" type="number" min="0.5" max="0.95" step="0.05" style="width:80px" />
+        <span class="hint" style="margin:0">(0.6=direct, 0.9=smooth)</span>
+      </div>
+
+      <h4>Battery</h4>
+      <div class="setting">
+        <label>Warning Voltage</label>
+        <input id="cfg-battWarn" type="number" min="6.0" max="9.0" step="0.1" style="width:80px" /> V
+      </div>
+      <div class="setting">
+        <label>Shutdown Voltage</label>
+        <input id="cfg-battOff" type="number" min="6.0" max="9.0" step="0.1" style="width:80px" /> V
+      </div>
+
+      <h4>Motor</h4>
+      <div class="setting">
+        <label>Max Throttle</label>
+        <select id="cfg-maxThrottle">
+          <option value="25">25%</option>
+          <option value="50">50%</option>
+          <option value="75">75%</option>
+          <option value="100">100%</option>
+        </select>
+      </div>
+
+      <button id="cfg-save">Save Settings</button>
+      <div id="cfg-msg" class="msg"></div>
+    </section>
+
+    <section class="card">
       <h3>ADC Monitor</h3>
       <p><strong>V_ADC (calibrated):</strong> <code id="adc-vAdc">--</code> V</p>
       <p><strong>V_Battery:</strong> <code id="adc-vBatt">--</code> V</p>
