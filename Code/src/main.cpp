@@ -14,6 +14,95 @@
 #include "ota.h"
 #include "drv8323.h"
 
+// ----------------- OTA ------------------
+#ifndef FOTA_CURRENT_VERSION
+#define FOTA_CURRENT_VERSION      "v0.0.0"  // overridden by CI build flag
+#endif
+#define FOTA_CHECK_DEFAULT_MS     300000UL
+static uint32_t fotaCheckIntervalMs = FOTA_CHECK_DEFAULT_MS;
+static uint32_t nextFotaCheckMs = 0;
+
+// ----------------- Device Settings (NVS) ------------------
+Preferences prefsSettings;
+
+struct DeviceSettings {
+  // OTA
+  bool     otaEnabled;
+  uint32_t otaIntervalMs;
+  // Network
+  uint8_t  wifiTxPower;       // 0=low, 1=med, 2=high, 3=max
+  uint16_t failsafeMs;
+  uint32_t beaconIntervalMs;
+  char     apPrefix[32];
+  // Steering
+  bool     steerInvert;
+  float    steerGain;         // 0.3 .. 1.5
+  uint16_t steerDeadzone;     // 0 .. 200
+  float    steerFilter;       // 0.5 .. 0.95 (FILTER_ALPHA)
+  // Battery
+  float    battWarnV;         // warning voltage
+  float    battOffV;          // shutdown voltage
+  // Motor
+  uint8_t  maxThrottlePct;    // 10..100
+};
+
+static DeviceSettings settings = {
+  true, FOTA_CHECK_DEFAULT_MS,                       // OTA
+  3, 400, 2000, "ESP-RC-Car-Setup-",                 // Network
+  false, 1.0f, 30, 0.85f,                            // Steering
+  7.9f, 7.4f,                                        // Battery
+  100                                                 // Motor
+};
+
+static void loadSettings() {
+  prefsSettings.begin("cfg", true);
+  settings.otaEnabled      = prefsSettings.getBool("otaOn", true);
+  settings.otaIntervalMs   = prefsSettings.getULong("otaInt", FOTA_CHECK_DEFAULT_MS);
+  settings.wifiTxPower     = prefsSettings.getUChar("txPow", 3);
+  settings.failsafeMs      = prefsSettings.getUShort("failMs", 400);
+  settings.beaconIntervalMs= prefsSettings.getULong("beacInt", 2000);
+  String ap = prefsSettings.getString("apPfx", "ESP-RC-Car-Setup-");
+  strncpy(settings.apPrefix, ap.c_str(), sizeof(settings.apPrefix)-1);
+  settings.apPrefix[sizeof(settings.apPrefix)-1] = '\0';
+  settings.steerInvert     = prefsSettings.getBool("stInv", false);
+  settings.steerGain       = prefsSettings.getFloat("stGain", 1.0f);
+  settings.steerDeadzone   = prefsSettings.getUShort("stDz", 30);
+  settings.steerFilter     = prefsSettings.getFloat("stFilt", 0.85f);
+  settings.battWarnV       = prefsSettings.getFloat("bWarn", 7.9f);
+  settings.battOffV        = prefsSettings.getFloat("bOff", 7.4f);
+  settings.maxThrottlePct  = prefsSettings.getUChar("maxThr", 100);
+  prefsSettings.end();
+  fotaCheckIntervalMs = settings.otaIntervalMs;
+}
+
+static void saveSettings() {
+  prefsSettings.begin("cfg", false);
+  prefsSettings.putBool("otaOn", settings.otaEnabled);
+  prefsSettings.putULong("otaInt", settings.otaIntervalMs);
+  prefsSettings.putUChar("txPow", settings.wifiTxPower);
+  prefsSettings.putUShort("failMs", settings.failsafeMs);
+  prefsSettings.putULong("beacInt", settings.beaconIntervalMs);
+  prefsSettings.putString("apPfx", settings.apPrefix);
+  prefsSettings.putBool("stInv", settings.steerInvert);
+  prefsSettings.putFloat("stGain", settings.steerGain);
+  prefsSettings.putUShort("stDz", settings.steerDeadzone);
+  prefsSettings.putFloat("stFilt", settings.steerFilter);
+  prefsSettings.putFloat("bWarn", settings.battWarnV);
+  prefsSettings.putFloat("bOff", settings.battOffV);
+  prefsSettings.putUChar("maxThr", settings.maxThrottlePct);
+  prefsSettings.end();
+  fotaCheckIntervalMs = settings.otaIntervalMs;
+}
+
+static void applyWifiTxPower() {
+  switch (settings.wifiTxPower) {
+    case 0: WiFi.setTxPower(WIFI_POWER_8_5dBm);  break;
+    case 1: WiFi.setTxPower(WIFI_POWER_15dBm);    break;
+    case 2: WiFi.setTxPower(WIFI_POWER_17dBm);    break;
+    default: WiFi.setTxPower(WIFI_POWER_19_5dBm); break;
+  }
+}
+
 // ========== BATTERIEMONITORING ==========
 // ── Pins & Hardware ──────────────────────────────────────────
 #define ADC_UB_CHANNEL  ADC1_CHANNEL_0  // GPIO1 = ADC1_CH0
@@ -182,95 +271,6 @@ void batterie_loop()
 #define BEACON_INTERVAL_MS        2000UL   // UDP-Discovery-Beacon
 #define SCAN_DWELL_MS             40       // passives Scannen pro Kanal
 #define AP_SSID_PREFIX            "ESP-RC-Car-Setup-"
-
-// ----------------- OTA ------------------
-#ifndef FOTA_CURRENT_VERSION
-#define FOTA_CURRENT_VERSION      "v0.0.0"  // overridden by CI build flag
-#endif
-#define FOTA_CHECK_DEFAULT_MS     300000UL
-static uint32_t fotaCheckIntervalMs = FOTA_CHECK_DEFAULT_MS;
-static uint32_t nextFotaCheckMs = 0;
-
-// ----------------- Device Settings (NVS) ------------------
-Preferences prefsSettings;
-
-struct DeviceSettings {
-  // OTA
-  bool     otaEnabled;
-  uint32_t otaIntervalMs;
-  // Network
-  uint8_t  wifiTxPower;       // 0=low, 1=med, 2=high, 3=max
-  uint16_t failsafeMs;
-  uint32_t beaconIntervalMs;
-  char     apPrefix[32];
-  // Steering
-  bool     steerInvert;
-  float    steerGain;         // 0.3 .. 1.5
-  uint16_t steerDeadzone;     // 0 .. 200
-  float    steerFilter;       // 0.5 .. 0.95 (FILTER_ALPHA)
-  // Battery
-  float    battWarnV;         // warning voltage
-  float    battOffV;          // shutdown voltage
-  // Motor
-  uint8_t  maxThrottlePct;    // 10..100
-};
-
-static DeviceSettings settings = {
-  true, FOTA_CHECK_DEFAULT_MS,                       // OTA
-  3, 400, 2000, "ESP-RC-Car-Setup-",                 // Network
-  false, 1.0f, 30, 0.85f,                            // Steering
-  7.9f, 7.4f,                                        // Battery
-  100                                                 // Motor
-};
-
-static void loadSettings() {
-  prefsSettings.begin("cfg", true);
-  settings.otaEnabled      = prefsSettings.getBool("otaOn", true);
-  settings.otaIntervalMs   = prefsSettings.getULong("otaInt", FOTA_CHECK_DEFAULT_MS);
-  settings.wifiTxPower     = prefsSettings.getUChar("txPow", 3);
-  settings.failsafeMs      = prefsSettings.getUShort("failMs", 400);
-  settings.beaconIntervalMs= prefsSettings.getULong("beacInt", 2000);
-  String ap = prefsSettings.getString("apPfx", "ESP-RC-Car-Setup-");
-  strncpy(settings.apPrefix, ap.c_str(), sizeof(settings.apPrefix)-1);
-  settings.apPrefix[sizeof(settings.apPrefix)-1] = '\0';
-  settings.steerInvert     = prefsSettings.getBool("stInv", false);
-  settings.steerGain       = prefsSettings.getFloat("stGain", 1.0f);
-  settings.steerDeadzone   = prefsSettings.getUShort("stDz", 30);
-  settings.steerFilter     = prefsSettings.getFloat("stFilt", 0.85f);
-  settings.battWarnV       = prefsSettings.getFloat("bWarn", 7.9f);
-  settings.battOffV        = prefsSettings.getFloat("bOff", 7.4f);
-  settings.maxThrottlePct  = prefsSettings.getUChar("maxThr", 100);
-  prefsSettings.end();
-  fotaCheckIntervalMs = settings.otaIntervalMs;
-}
-
-static void saveSettings() {
-  prefsSettings.begin("cfg", false);
-  prefsSettings.putBool("otaOn", settings.otaEnabled);
-  prefsSettings.putULong("otaInt", settings.otaIntervalMs);
-  prefsSettings.putUChar("txPow", settings.wifiTxPower);
-  prefsSettings.putUShort("failMs", settings.failsafeMs);
-  prefsSettings.putULong("beacInt", settings.beaconIntervalMs);
-  prefsSettings.putString("apPfx", settings.apPrefix);
-  prefsSettings.putBool("stInv", settings.steerInvert);
-  prefsSettings.putFloat("stGain", settings.steerGain);
-  prefsSettings.putUShort("stDz", settings.steerDeadzone);
-  prefsSettings.putFloat("stFilt", settings.steerFilter);
-  prefsSettings.putFloat("bWarn", settings.battWarnV);
-  prefsSettings.putFloat("bOff", settings.battOffV);
-  prefsSettings.putUChar("maxThr", settings.maxThrottlePct);
-  prefsSettings.end();
-  fotaCheckIntervalMs = settings.otaIntervalMs;
-}
-
-static void applyWifiTxPower() {
-  switch (settings.wifiTxPower) {
-    case 0: WiFi.setTxPower(WIFI_POWER_8_5dBm);  break;
-    case 1: WiFi.setTxPower(WIFI_POWER_15dBm);    break;
-    case 2: WiFi.setTxPower(WIFI_POWER_17dBm);    break;
-    default: WiFi.setTxPower(WIFI_POWER_19_5dBm); break;
-  }
-}
 
 // ----------------- WLAN / AP -----------------
 
