@@ -868,10 +868,28 @@ static uint32_t nextBattSendMs = 0;
 // ----------------- Setup ----------------------
 void setup(){
   Serial.begin(115200);
+
+  // ---- Multi Reset Detection (3x quick reset, NVS based) ----
+  // Checked FIRST so resets are counted before slow init
+  prefsMRD.begin("mrd", false);
+  uint8_t cnt = prefsMRD.getUChar("cnt", 0);
+  cnt++;
+  prefsMRD.putUChar("cnt", cnt);
+  prefsMRD.end();
+  Serial.printf("[MRD] boot count = %u / %u\n", (unsigned)cnt, (unsigned)MRD_REQUIRED);
+  mrdClearAtMs = millis() + MRD_TIMEOUT_MS;
+  if (cnt >= MRD_REQUIRED) {
+    startConfigPortal = true;
+    prefsMRD.begin("mrd", false);
+    prefsMRD.putUChar("cnt", 0);
+    prefsMRD.end();
+    Serial.println("[MRD] threshold reached -> starting config portal");
+  }
+
   delay(1000);
   Serial.printf("[BOOT] Firmware version: %s\n", FOTA_CURRENT_VERSION);
   Serial.println("[BOOT] Initializing DRV8323, Battery Monitor, WiFi & Control...");
-  
+
   // Initialize DRV8323S motor driver
   Serial.println("[DRV] Initializing DRV8323S...");
   drv.begin();
@@ -924,20 +942,6 @@ void setup(){
   
   pinMode(LED_PIN, OUTPUT);
 
-  // ---- Multi Reset Detection (3x quick reset, NVS based) ----
-  prefsMRD.begin("mrd", false);
-  uint8_t cnt = prefsMRD.getUChar("cnt", 0);
-  cnt++;
-  prefsMRD.putUChar("cnt", cnt);
-  Serial.printf("[MRD] boot count within window (NVS) = %u\n", (unsigned)cnt);
-  mrdClearAtMs = millis() + MRD_TIMEOUT_MS;
-  if (cnt >= MRD_REQUIRED) {
-    startConfigPortal = true;
-    prefsMRD.putUChar("cnt", 0);
-    Serial.println("[MRD] threshold reached -> starting config portal");
-  }
-  prefsMRD.end();
-
   // Filesystem for later
   if (!LittleFS.begin()) {
     Serial.println("[FS] LittleFS mount failed");
@@ -976,8 +980,12 @@ void setup(){
     IPAddress ip = WiFi.localIP();
     Serial.printf("[WiFi] Connected. IP=%s\n", ip.toString().c_str());
 
-    nextFotaCheckMs = millis() + 15000UL;
-    Serial.println("[FOTA] OTA check scheduled in 15s");
+    if (settings.otaEnabled) {
+      nextFotaCheckMs = millis() + 15000UL;
+      Serial.println("[FOTA] OTA check scheduled in 15s");
+    } else {
+      Serial.println("[FOTA] Auto update disabled");
+    }
   } else {
     // Either requested by multi-reset or failed to connect -> open AP portal
     startAPPortal();

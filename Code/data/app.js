@@ -161,13 +161,13 @@ window.addEventListener('DOMContentLoaded', () => {
 
   apiGetSettings().then(s => {
     cfgVersion.textContent = s.version;
-    cfg['cfg-ota'].value = s.otaEnabled ? '1' : '0';
+    cfg['cfg-ota'].checked = s.otaEnabled;
     cfg['cfg-otaInterval'].value = Math.round(s.otaIntervalMs / 60000);
     cfg['cfg-txPower'].value = String(s.wifiTxPower);
     cfg['cfg-failsafe'].value = String(s.failsafeMs);
     cfg['cfg-beacon'].value = String(s.beaconIntervalMs);
     cfg['cfg-apPrefix'].value = s.apPrefix;
-    cfg['cfg-steerInvert'].value = s.steerInvert ? '1' : '0';
+    cfg['cfg-steerInvert'].checked = s.steerInvert;
     cfg['cfg-steerGain'].value = s.steerGain;
     cfg['cfg-steerDeadzone'].value = s.steerDeadzone;
     cfg['cfg-steerFilter'].value = s.steerFilter;
@@ -181,13 +181,13 @@ window.addEventListener('DOMContentLoaded', () => {
   cfgSave.addEventListener('click', async () => {
     cfgMsg.textContent = '';
     const res = await apiSaveSettings({
-      otaEnabled: cfg['cfg-ota'].value,
+      otaEnabled: cfg['cfg-ota'].checked ? '1' : '0',
       otaIntervalMs: Math.max(1, Math.min(1440, parseInt(cfg['cfg-otaInterval'].value))) * 60000,
       wifiTxPower: cfg['cfg-txPower'].value,
       failsafeMs: cfg['cfg-failsafe'].value,
       beaconIntervalMs: cfg['cfg-beacon'].value,
       apPrefix: cfg['cfg-apPrefix'].value,
-      steerInvert: cfg['cfg-steerInvert'].value,
+      steerInvert: cfg['cfg-steerInvert'].checked ? '1' : '0',
       steerGain: cfg['cfg-steerGain'].value,
       steerDeadzone: cfg['cfg-steerDeadzone'].value,
       steerFilter: cfg['cfg-steerFilter'].value,
