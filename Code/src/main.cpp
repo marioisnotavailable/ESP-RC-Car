@@ -569,6 +569,17 @@ void startAPPortal() {
     bool ok = deleteNetworkByIndex(idx);
     http.send(200, "application/json", String("{\"ok\":") + (ok?"true":"false") + "}");
   });
+  http.on("/api/move", HTTP_POST, [](){
+    int from = http.arg("from").toInt();
+    int to = http.arg("to").toInt();
+    bool ok = false;
+    if (from >= 0 && from < (int)savedNets.size() && to >= 0 && to < (int)savedNets.size() && from != to) {
+      std::swap(savedNets[from], savedNets[to]);
+      saveSavedNetworks();
+      ok = true;
+    }
+    http.send(200, "application/json", String("{\"ok\":") + (ok?"true":"false") + "}");
+  });
   http.on("/api/scan", HTTP_POST, [](){
     runWiFiScan();
     String j = "[";

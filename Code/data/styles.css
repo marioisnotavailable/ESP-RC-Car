@@ -11,9 +11,10 @@ button.right { float: right; }
 
 .card h4 { margin: 14px 0 6px; color: #555; font-size: 0.95rem; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
 .card h4:first-of-type { margin-top: 0; }
-.setting { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #eee; }
-.setting label { font-weight: 500; }
+.setting { display: flex; align-items: center; padding: 6px 0; border-bottom: 1px solid #eee; }
+.setting > label:first-child { font-weight: 500; flex: 1; }
 .setting select, .setting span, .setting input { font-size: 0.95rem; }
+.unit { margin-left: 4px; color: #666; font-size: 0.9rem; }
 .switch { position: relative; display: inline-block; width: 48px; height: 26px; }
 .switch input { opacity: 0; width: 0; height: 0; }
 .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: #ccc; border-radius: 26px; transition: .3s; }
@@ -24,3 +25,4 @@ button.right { float: right; }
 table { border-collapse: collapse; width: 100%; }
 th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
 th { background: #fafafa; }
+button[data-up], button[data-dn] { padding: 2px 8px; margin: 0 2px; font-size: 0.85rem; }

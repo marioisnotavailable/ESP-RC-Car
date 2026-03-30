@@ -12,6 +12,11 @@ async function apiDelete(idx) {
   const r = await fetch('/api/delete', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
   return r.json();
 }
+async function apiMove(from, to) {
+  const body = new URLSearchParams({ from: String(from), to: String(to) });
+  const r = await fetch('/api/move', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+  return r.json();
+}
 async function apiScan() {
   const r = await fetch('/api/scan', { method: 'POST' });
   return r.json();
@@ -32,9 +37,11 @@ async function apiSaveSettings(data) {
 function renderSaved(list) {
   const tb = document.querySelector('#saved-table tbody');
   tb.innerHTML = '';
-  list.forEach((it) => {
+  list.forEach((it, idx) => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${it.i}</td><td>${it.ssid}</td><td><button data-del="${it.i}">Delete</button></td>`;
+    const upBtn = idx > 0 ? `<button data-up="${it.i}">&#9650;</button>` : '';
+    const dnBtn = idx < list.length - 1 ? `<button data-dn="${it.i}">&#9660;</button>` : '';
+    tr.innerHTML = `<td>${it.i}</td><td>${it.ssid}</td><td>${upBtn}${dnBtn}</td><td><button data-del="${it.i}">Delete</button></td>`;
     tb.appendChild(tr);
   });
 }
@@ -140,6 +147,14 @@ window.addEventListener('DOMContentLoaded', () => {
     if (t && t.matches('button[data-del]')) {
       const idx = Number(t.getAttribute('data-del'));
       await apiDelete(idx);
+      await refreshAll();
+    } else if (t && t.matches('button[data-up]')) {
+      const idx = Number(t.getAttribute('data-up'));
+      await apiMove(idx, idx - 1);
+      await refreshAll();
+    } else if (t && t.matches('button[data-dn]')) {
+      const idx = Number(t.getAttribute('data-dn'));
+      await apiMove(idx, idx + 1);
       await refreshAll();
     }
   });
