@@ -1,6 +1,5 @@
 #include <Arduino.h>
 #include <WiFi.h>
-#include <WiFiMulti.h>
 #include <WebServer.h>
 #include <DNSServer.h>
 #include <WebSocketsServer.h>
@@ -271,7 +270,7 @@ void batterie_loop()
 // ----------------- Konfiguration / Konstanten -----------------
 #define HTTP_PORT                 80
 #define WS_PORT                   81
-#define WIFI_CONNECT_TOTAL_MS     15000UL  // Gesamtdauer für Verbindungsversuch
+#define WIFI_CONNECT_TOTAL_MS     30000UL  // Gesamtdauer für Verbindungsversuch
 #define WIFI_CONNECT_POLL_MS      250      // Poll-Intervall
 #define BEACON_INTERVAL_MS        2000UL   // UDP-Discovery-Beacon
 #define SCAN_DWELL_MS             40       // passives Scannen pro Kanal
@@ -312,7 +311,6 @@ static uint32_t    nextServoUpdateMs = 0;    // 20ms Scheduler
 // ----------------- Webserver / WS ------------
 WebSocketsServer ws(WS_PORT);
 WebServer http(HTTP_PORT);
-WiFiMulti wifiMulti;
 Preferences prefs;
 DNSServer dnsServer; // for captive portal DNS redirect
 WiFiUDP udp;         // UDP for discovery
@@ -400,8 +398,18 @@ static bool           startConfigPortal = false;
 Preferences prefsMRD;                          // separate namespace for MRD
 
 // ----------------- Saved WiFi storage --------------------
-struct WifiNet { String ssid; String pass; };
+struct WifiNet {
+  String ssid;
+  String pass;
+  uint8_t bssid[6];  // cached BSSID (all zeros = unknown)
+  int32_t channel;    // cached channel (0 = unknown)
+};
 static std::vector<WifiNet> savedNets;
+
+static bool hasCachedBssid(const WifiNet& n) {
+  for (int i = 0; i < 6; i++) if (n.bssid[i] != 0) return true;
+  return false;
+}
 
 void storageBegin() {
   prefs.begin("wifi", false);
@@ -426,7 +434,29 @@ void loadSavedNetworks() {
     if (line.length() == 0) continue;
     int sep = line.indexOf('\t');
     if (sep <= 0) continue;
-    WifiNet n{ line.substring(0, sep), line.substring(sep + 1) };
+    WifiNet n;
+    n.ssid = line.substring(0, sep);
+    String rest = line.substring(sep + 1);
+    memset(n.bssid, 0, 6);
+    n.channel = 0;
+    // Format: pass\tbssid\tchannel (bssid/channel optional)
+    int sep2 = rest.indexOf('\t');
+    if (sep2 >= 0) {
+      n.pass = rest.substring(0, sep2);
+      String meta = rest.substring(sep2 + 1);
+      int sep3 = meta.indexOf('\t');
+      if (sep3 >= 0) {
+        // parse BSSID "AA:BB:CC:DD:EE:FF"
+        String bStr = meta.substring(0, sep3);
+        if (bStr.length() == 17) {
+          for (int b = 0; b < 6; b++)
+            n.bssid[b] = (uint8_t)strtol(bStr.c_str() + b * 3, NULL, 16);
+        }
+        n.channel = meta.substring(sep3 + 1).toInt();
+      }
+    } else {
+      n.pass = rest;
+    }
     if (n.ssid.length() > 0) savedNets.push_back(n);
   }
 }
@@ -437,7 +467,14 @@ void saveSavedNetworks() {
     // Don't allow tabs/newlines in stored strings to keep format simple
     String s = n.ssid; s.replace('\t', ' '); s.replace('\n', ' ');
     String p = n.pass; p.replace('\t', ' '); p.replace('\n', ' ');
-    out += s; out += '\t'; out += p; out += '\n';
+    out += s; out += '\t'; out += p;
+    if (hasCachedBssid(n)) {
+      char bStr[18];
+      snprintf(bStr, sizeof(bStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+        n.bssid[0], n.bssid[1], n.bssid[2], n.bssid[3], n.bssid[4], n.bssid[5]);
+      out += '\t'; out += bStr; out += '\t'; out += String(n.channel);
+    }
+    out += '\n';
   }
   storageBegin();
   prefs.putString("nets", out);
@@ -449,7 +486,10 @@ bool addNetwork(const String& ssid, const String& pass) {
   // de-duplicate by ssid
   for (auto &n : savedNets) if (n.ssid == ssid) { n.pass = pass; saveSavedNetworks(); return true; }
   if (savedNets.size() >= 16) return false; // cap
-  savedNets.push_back({ssid, pass});
+  WifiNet nw;
+  nw.ssid = ssid; nw.pass = pass;
+  memset(nw.bssid, 0, 6); nw.channel = 0;
+  savedNets.push_back(nw);
   saveSavedNetworks();
   return true;
 }
@@ -973,17 +1013,77 @@ void setup(){
     WiFi.setSleep(false);
     WiFi.mode(WIFI_STA);
     applyWifiTxPower();
-    // Add networks to WiFiMulti
-    for (auto &n : savedNets) {
-      wifiMulti.addAP(n.ssid.c_str(), n.pass.c_str());
+
+    // Helper lambda: try connecting, return true if connected
+    auto tryConnect = [&](size_t i, uint32_t timeoutMs, bool useCached) -> bool {
+      WiFi.disconnect(true);
+      delay(100);
+      if (useCached && hasCachedBssid(savedNets[i])) {
+        Serial.printf("[WiFi] [%u/%u] Fast connect \"%s\" (ch=%d) ...\n",
+          (unsigned)(i+1), (unsigned)savedNets.size(),
+          savedNets[i].ssid.c_str(), (int)savedNets[i].channel);
+        WiFi.begin(savedNets[i].ssid.c_str(), savedNets[i].pass.c_str(),
+          savedNets[i].channel, savedNets[i].bssid);
+      } else {
+        Serial.printf("[WiFi] [%u/%u] Trying \"%s\" (pass len=%u) ...\n",
+          (unsigned)(i+1), (unsigned)savedNets.size(),
+          savedNets[i].ssid.c_str(), (unsigned)savedNets[i].pass.length());
+        WiFi.begin(savedNets[i].ssid.c_str(), savedNets[i].pass.c_str());
+      }
+      uint32_t t0 = millis();
+      while (millis() - t0 < timeoutMs) {
+        wl_status_t status = WiFi.status();
+        if (status == WL_CONNECTED) {
+          Serial.printf("[WiFi] Connected to \"%s\" (RSSI: %d) after %lums\n",
+            WiFi.SSID().c_str(), WiFi.RSSI(), millis() - t0);
+          return true;
+        }
+        if (status == WL_CONNECT_FAILED || status == WL_NO_SSID_AVAIL) {
+          const char* reason = (status == WL_CONNECT_FAILED)
+            ? "FAILED - wrong password or auth rejected"
+            : "NO_SSID - network not found (out of range or 5GHz only)";
+          Serial.printf("[WiFi] \"%s\": %s | %lums\n", savedNets[i].ssid.c_str(), reason, millis() - t0);
+          return false;
+        }
+        delay(WIFI_CONNECT_POLL_MS);
+      }
+      Serial.printf("[WiFi] \"%s\": timeout after %lums\n", savedNets[i].ssid.c_str(), timeoutMs);
+      return false;
+    };
+
+    // Phase 1: Fast connect with cached BSSID/channel (5s per network)
+    for (size_t i = 0; i < savedNets.size() && !connected; ++i) {
+      if (hasCachedBssid(savedNets[i]))
+        connected = tryConnect(i, 5000, true);
     }
-    Serial.printf("[WiFi] Trying %u saved network(s) ...\n", (unsigned)savedNets.size());
-    uint32_t t0 = millis();
-    while (millis() - t0 < WIFI_CONNECT_TOTAL_MS) {
-      if (wifiMulti.run() == WL_CONNECTED) { connected = true; break; }
-      delay(WIFI_CONNECT_POLL_MS);
-      Serial.print('.');
+
+    // Phase 2: Normal connect without cache (remaining time split evenly)
+    if (!connected) {
+      Serial.println("[WiFi] Fast connect failed, trying normal scan...");
+      uint32_t perNet = WIFI_CONNECT_TOTAL_MS / savedNets.size();
+      for (size_t i = 0; i < savedNets.size() && !connected; ++i) {
+        connected = tryConnect(i, perNet, false);
+      }
     }
+
+    // Save BSSID/channel on success for next boot
+    if (connected) {
+      String connSsid = WiFi.SSID();
+      uint8_t* bssid = WiFi.BSSID();
+      int32_t ch = WiFi.channel();
+      for (auto &n : savedNets) {
+        if (n.ssid == connSsid) {
+          memcpy(n.bssid, bssid, 6);
+          n.channel = ch;
+          saveSavedNetworks();
+          Serial.printf("[WiFi] Cached BSSID=%02X:%02X:%02X:%02X:%02X:%02X ch=%d for \"%s\"\n",
+            bssid[0], bssid[1], bssid[2], bssid[3], bssid[4], bssid[5], ch, connSsid.c_str());
+          break;
+        }
+      }
+    }
+
+    if (!connected) Serial.println("[WiFi] All networks failed");
     Serial.println();
   }
 
