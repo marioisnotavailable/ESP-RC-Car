@@ -634,6 +634,14 @@ void startAPPortal() {
     j += "]";
     http.send(200, "application/json", j);
   });
+  http.on("/api/restart-charge", HTTP_POST, [](){
+    pinMode(47, OUTPUT);
+    digitalWrite(47, HIGH);
+    delay(100);
+    digitalWrite(47, LOW);
+    Serial.println("[DEBUG] GPIO47 pulsed HIGH->LOW (restart charging)");
+    http.send(200, "application/json", "{\"ok\":true}");
+  });
   http.on("/api/reboot", HTTP_POST, [](){
     http.send(200, "application/json", "{\"ok\":true}");
     delay(200);

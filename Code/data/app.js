@@ -164,6 +164,10 @@ window.addEventListener('DOMContentLoaded', () => {
     await apiReboot();
   });
 
+  document.getElementById('restart-charge-btn').addEventListener('click', async () => {
+    await fetch('/api/restart-charge', { method: 'POST' });
+  });
+
   // Settings
   const cfgIds = ['cfg-ota','cfg-otaInterval','cfg-txPower','cfg-failsafe','cfg-beacon',
     'cfg-apPrefix','cfg-steerInvert','cfg-steerGain','cfg-steerDeadzone','cfg-steerFilter',
