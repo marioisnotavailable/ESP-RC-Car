@@ -84,21 +84,6 @@ function connectWebSocket() {
         if (el) el.textContent = percent;
       }
     }
-    // Parse ADC message: "ADC:vAdc,vBatt,samples" (e.g., "ADC:3.058,8.56,5211")
-    if (msg.startsWith('ADC:')) {
-      const parts = msg.substring(4).split(',');
-      if (parts.length === 3) {
-        const vAdc = parseFloat(parts[0]);
-        const vBatt = parseFloat(parts[1]);
-        const samples = parseInt(parts[2]);
-        
-        if (!isNaN(vAdc) && !isNaN(vBatt) && !isNaN(samples)) {
-          document.getElementById('adc-vAdc').textContent = vAdc.toFixed(3);
-          document.getElementById('adc-vBatt').textContent = vBatt.toFixed(2);
-          document.getElementById('adc-samples').textContent = samples;
-        }
-      }
-    }
   };
   
   ws.onerror = (error) => {

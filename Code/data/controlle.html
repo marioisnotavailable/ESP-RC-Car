@@ -89,28 +89,19 @@ function connectWS(){
   ws.onclose = ()=> setTimeout(connectWS, 1000);
   ws.onmessage = (event)=>{
     const msg = event.data;
-    // Parse ADC message: "ADC:vAdc,vBatt,samples" (e.g., "ADC:3.058,8.56,5211")
-    if (msg.startsWith("ADC:")) {
-      const parts = msg.substring(4).split(',');
-      if (parts.length === 3) {
-        const vBatt = parseFloat(parts[1]);
-        // Calculate battery percentage: 8.39V = 100%, 7.5V = 0%
-        const BATT_MAX_VOLTAGE = 8.39;
-        const BATT_MIN_VOLTAGE = 7.5;
-        const battPercent = Math.round(((vBatt - BATT_MIN_VOLTAGE) / (BATT_MAX_VOLTAGE - BATT_MIN_VOLTAGE)) * 100);
-        const battPercentClamped = Math.max(0, Math.min(100, battPercent));
-        
-        if (!isNaN(battPercentClamped)) {
-          document.getElementById("batteryStatus").textContent = `Batterie: ${battPercentClamped}%`;
-          // Color coding: >= 50% green, 20-50% orange, < 20% red (critical)
-          const battEl = document.getElementById("batteryStatus");
-          if (battPercentClamped < 20) {
-            battEl.style.color = "#f99"; // Red - critical/deep discharge warning
-          } else if (battPercentClamped < 50) {
-            battEl.style.color = "#fa0"; // Orange - warning
-          } else {
-            battEl.style.color = "#9ad"; // Cyan - ok
-          }
+    // Parse battery percentage message: "BATT:XX"
+    if (msg.startsWith("BATT:")) {
+      const percent = parseInt(msg.substring(5));
+      if (!isNaN(percent)) {
+        const clamped = Math.max(0, Math.min(100, percent));
+        document.getElementById("batteryStatus").textContent = `Batterie: ${clamped}%`;
+        const battEl = document.getElementById("batteryStatus");
+        if (clamped < 20) {
+          battEl.style.color = "#f99";
+        } else if (clamped < 50) {
+          battEl.style.color = "#fa0";
+        } else {
+          battEl.style.color = "#9ad";
         }
       }
     }

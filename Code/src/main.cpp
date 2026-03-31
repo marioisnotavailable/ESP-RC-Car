@@ -132,8 +132,8 @@ static void applyWifiTxPower() {
 // ── Battery Globals ──────────────────────────────────────────
 volatile int batteryPercent = 0;  // Batterieprozentage (0-100%)
 static float vBatt_float_last = 0.0f;  // Letzte Rohspannung für Logging
-static float vAdc_last = 0.0f;  // Letzte kalibrierte ADC-Spannung für WebSocket
-static int   sampleCount_last = 0;  // Letzte Sample-Anzahl für WebSocket
+static float vAdc_last = 0.0f;  // Letzte kalibrierte ADC-Spannung für Logging
+static int   sampleCount_last = 0;  // Letzte Sample-Anzahl für Logging
 
 static esp_adc_cal_characteristics_t adc_chars;
 static bool cali_ok        = false;
@@ -1187,10 +1187,6 @@ void loop(){
     char battMsg[64];
     snprintf(battMsg, sizeof(battMsg), "BATT:%d", batteryPercent);
     ws.broadcastTXT((uint8_t*)battMsg, strlen(battMsg));
-    // ADC details for config page
-    char adcMsg[64];
-    snprintf(adcMsg, sizeof(adcMsg), "ADC:%.3f,%.2f,%d", vAdc_last, vBatt_float_last, sampleCount_last);
-    ws.broadcastTXT((uint8_t*)adcMsg, strlen(adcMsg));
   }
   if (millis() - lastCmdMs > settings.failsafeMs) {
     lastCmd.steer = 0; // optional: später auch throttle failsafen

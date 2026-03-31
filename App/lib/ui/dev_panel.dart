@@ -245,7 +245,7 @@ class ConnectionStatusView extends StatelessWidget {
     if (status != ConnectionStatus.connected || percent == null) {
       return '000';
     }
-    return '${percent.clamp(0, 99)}';
+    return '${percent.clamp(0, 100)}';
   }
 
   IconData _batteryIcon(ConnectionStatus status, int? percent) {
