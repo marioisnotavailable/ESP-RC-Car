@@ -76,6 +76,14 @@ function connectWebSocket() {
   
   ws.onmessage = (event) => {
     const msg = event.data;
+    // Parse battery percentage message: "BATT:XX"
+    if (msg.startsWith('BATT:')) {
+      const percent = parseInt(msg.substring(5));
+      if (!isNaN(percent)) {
+        const el = document.getElementById('cfg-battPercent');
+        if (el) el.textContent = percent;
+      }
+    }
     // Parse ADC message: "ADC:vAdc,vBatt,samples" (e.g., "ADC:3.058,8.56,5211")
     if (msg.startsWith('ADC:')) {
       const parts = msg.substring(4).split(',');
