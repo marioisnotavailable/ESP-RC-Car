@@ -1,5 +1,6 @@
 #include "rc_battery.h"
 #include "rc_settings.h"
+#include "rc_serial.h"
 #include "rc_pins.h"
 #include "driver/gpio.h"
 #include <driver/adc.h>
@@ -77,18 +78,20 @@ void rc_battery_loop() {
   vBatt_float_last  = vBatt;
   vAdc_last         = vAdc;
 
-  Serial.printf("[ADC] V_ADC: %.3fV (%s) | V_Batt: %.2fV (vBatt=%d) | Samples: %d\n",
-                vAdc, cali_ok ? "kalibriert" : "unkalibriert", vBatt, batteryPercent, sampleCount);
+  if (logFlags.adc)
+    Serial.printf("[ADC] V_ADC: %.3fV (%s) | V_Batt: %.2fV (vBatt=%d) | Samples: %d\n",
+                  vAdc, cali_ok ? "kalibriert" : "unkalibriert", vBatt, batteryPercent, sampleCount);
 
   mvAccum     = 0;
   sampleCount = 0;
 
   if (vBatt <= settings.battOffV) {
     lowVoltageHits++;
-    Serial.printf("[WARN] Unterspannung %d/%d\n", lowVoltageHits, LOW_CONFIRM_COUNT);
+    if (logFlags.warn)
+      Serial.printf("[WARN] Unterspannung %d/%d\n", lowVoltageHits, LOW_CONFIRM_COUNT);
   } else {
     lowVoltageHits = 0;
-    if (vBatt <= settings.battWarnV)
+    if (vBatt <= settings.battWarnV && logFlags.warn)
       Serial.println("[WARN] Batterie niedrig!");
   }
 

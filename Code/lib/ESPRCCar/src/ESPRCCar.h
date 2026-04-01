@@ -14,3 +14,4 @@
 #include "rc_led.h"
 #include "rc_fs.h"
 #include "rc_ota.h"
+#include "rc_serial.h"

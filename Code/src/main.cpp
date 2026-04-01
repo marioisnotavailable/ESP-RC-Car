@@ -29,4 +29,5 @@ void loop() {
   rc_websocket_broadcast_batt();    // Batterieprozent an alle WS-Clients senden
   rc_websocket_failsafe_check();    // Lenkung auf 0 setzen wenn kein Befehl kommt
   rc_led_loop(lastCmd.throttle);    // LED-Blinken je nach Gasstellung
+  rc_serial_loop();                 // Serial-Befehle verarbeiten (help, status, ...)
 }

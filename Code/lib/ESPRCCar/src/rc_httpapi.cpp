@@ -126,6 +126,13 @@ void rc_start_portal() {
     httpServer.send(200, "application/json", j);
   });
 
+  httpServer.on("/api/adc", HTTP_GET, []() {
+    char j[128];
+    snprintf(j, sizeof(j), "{\"vAdc\":%.3f,\"vBatt\":%.2f,\"percent\":%d}",
+      vAdc_last, vBatt_float_last, batteryPercent);
+    httpServer.send(200, "application/json", j);
+  });
+
   httpServer.on("/api/restart-charge", HTTP_POST, []() {
     pinMode(CHARGE_RESTART_PIN, OUTPUT);
     digitalWrite(CHARGE_RESTART_PIN, HIGH);

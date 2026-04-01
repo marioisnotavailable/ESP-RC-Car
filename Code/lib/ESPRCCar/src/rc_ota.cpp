@@ -1,5 +1,6 @@
 #include "rc_ota.h"
 #include "rc_settings.h"
+#include "rc_serial.h"
 
 static uint32_t nextFotaCheckMs = 0;
 
@@ -166,7 +167,17 @@ static bool fotaCheckAndUpdate() {
 // ---- Public API ----
 void rc_boot_log() {
   delay(1000);
-  Serial.printf("[BOOT] Firmware version: %s\n", FOTA_CURRENT_VERSION);
+  Serial.println();
+  Serial.println("========================================");
+  Serial.println("       ESP-RC-Car Firmware");
+  Serial.printf("       Version: %s\n", FOTA_CURRENT_VERSION);
+  Serial.println("========================================");
+  Serial.println();
+  Serial.println("Serial Commands (type 'help' for details):");
+  Serial.println("  status | settings | reboot | ota | portal");
+  Serial.println("  wifi | scan | drv | motor off/a/b");
+  Serial.println("  log off/on/adc/drv/fota/warn");
+  Serial.println();
   Serial.println("[BOOT] Initializing DRV8323, Battery Monitor, WiFi & Control...");
 }
 
@@ -187,7 +198,7 @@ void rc_ota_loop() {
   uint32_t now = millis();
   if (now >= nextFotaCheckMs) {
     nextFotaCheckMs = now + fotaCheckIntervalMs;
-    Serial.println("[FOTA] Checking for update...");
+    if (logFlags.fota) Serial.println("[FOTA] Checking for update...");
     fotaCheckAndUpdate();
   }
 }

@@ -1,4 +1,5 @@
 #include "rc_motor.h"
+#include "rc_serial.h"
 #include "rc_pins.h"
 
 DRV8323 drv(PIN_DRV_CS, PIN_DRV_EN, PIN_DRV_FAULT,
@@ -23,15 +24,17 @@ void rc_motor_apply_phase(int phase) {
   if (phase == 0) {
     ledcWrite(CH_PWM_A, PWM_DUTY);
     ledcWrite(CH_PWM_B, 0);
-    Serial.printf("[DRV] Motor DIAG: Phase A active (PIN_INHA=%d, CH=%d duty=%d)\n",
-                  PIN_INHA, CH_PWM_A, PWM_DUTY);
+    if (logFlags.drv)
+      Serial.printf("[DRV] Motor DIAG: Phase A active (PIN_INHA=%d, CH=%d duty=%d)\n",
+                    PIN_INHA, CH_PWM_A, PWM_DUTY);
   } else if (phase == 1) {
     ledcWrite(CH_PWM_A, 0);
     ledcWrite(CH_PWM_B, PWM_DUTY);
-    Serial.printf("[DRV] Motor DIAG: Phase B active (PIN_INHB=%d, CH=%d duty=%d)\n",
-                  PIN_INHB, CH_PWM_B, PWM_DUTY);
+    if (logFlags.drv)
+      Serial.printf("[DRV] Motor DIAG: Phase B active (PIN_INHB=%d, CH=%d duty=%d)\n",
+                    PIN_INHB, CH_PWM_B, PWM_DUTY);
   } else {
-    Serial.println("[DRV] Motor DIAG: All off");
+    if (logFlags.drv) Serial.println("[DRV] Motor DIAG: All off");
   }
 }
 
@@ -78,7 +81,8 @@ void rc_motor_loop() {
     motorTestPhase = (motorTestPhase + 1) % 3;
     rc_motor_apply_phase(motorTestPhase);
     nextMotorDirSwitchMs = now + MOTOR_DIR_SWITCH_MS;
-    Serial.printf("[DRV] Next test phase in %lu ms\n", (unsigned long)MOTOR_DIR_SWITCH_MS);
+    if (logFlags.drv)
+      Serial.printf("[DRV] Next test phase in %lu ms\n", (unsigned long)MOTOR_DIR_SWITCH_MS);
   }
 }
 
@@ -86,7 +90,8 @@ void rc_motor_fault_check() {
   if (drv.hasFault()) {
     uint16_t f1 = drv.readFault1();
     uint16_t f2 = drv.readFault2();
-    Serial.printf("[DRV] Fault1: 0x%03X | Fault2: 0x%03X | nFAULT: LOW (Fault detected)\n", f1, f2);
+    if (logFlags.drv)
+      Serial.printf("[DRV] Fault1: 0x%03X | Fault2: 0x%03X | nFAULT: LOW (Fault detected)\n", f1, f2);
     drv.clearFaults();
   }
 }
