@@ -7,7 +7,7 @@
 #include "rc_httpapi.h"
 #include "rc_ota.h"
 
-LogFlags logFlags = { true, true, true, true };
+LogFlags logFlags = { true, true, true, true, true, true, true, true };
 
 static void printHelp() {
   Serial.println();
@@ -29,6 +29,10 @@ static void printHelp() {
   Serial.println("  log drv     — [DRV] Motor-Logs toggeln");
   Serial.println("  log fota    — [FOTA] OTA-Logs toggeln");
   Serial.println("  log warn    — [WARN] Warnungs-Logs toggeln");
+  Serial.println("  log ws      — [WS] WebSocket-Logs toggeln");
+  Serial.println("  log net     — [NET] Netzwerk-Logs toggeln");
+  Serial.println("  log http    — [HTTP] HTTP-API-Logs toggeln");
+  Serial.println("  log servo   — [SERVO] Steering-Logs toggeln");
   Serial.println("  log off     — Alle Loop-Logs aus");
   Serial.println("  log on      — Alle Loop-Logs an");
   Serial.println("=======================");
@@ -38,10 +42,14 @@ static void printHelp() {
 static void printLogStatus() {
   Serial.println();
   Serial.println("--- Log Groups ---");
-  Serial.printf("  [ADC]  Batterie:    %s\n", logFlags.adc  ? "ON" : "OFF");
-  Serial.printf("  [DRV]  Motor:       %s\n", logFlags.drv  ? "ON" : "OFF");
-  Serial.printf("  [FOTA] OTA:         %s\n", logFlags.fota ? "ON" : "OFF");
-  Serial.printf("  [WARN] Warnungen:   %s\n", logFlags.warn ? "ON" : "OFF");
+  Serial.printf("  [ADC]   Batterie:    %s\n", logFlags.adc   ? "ON" : "OFF");
+  Serial.printf("  [DRV]   Motor:       %s\n", logFlags.drv   ? "ON" : "OFF");
+  Serial.printf("  [FOTA]  OTA:         %s\n", logFlags.fota  ? "ON" : "OFF");
+  Serial.printf("  [WARN]  Warnungen:   %s\n", logFlags.warn  ? "ON" : "OFF");
+  Serial.printf("  [WS]    WebSocket:   %s\n", logFlags.ws    ? "ON" : "OFF");
+  Serial.printf("  [NET]   Netzwerk:    %s\n", logFlags.net   ? "ON" : "OFF");
+  Serial.printf("  [HTTP]  HTTP-API:    %s\n", logFlags.http  ? "ON" : "OFF");
+  Serial.printf("  [SERVO] Steering:    %s\n", logFlags.servo ? "ON" : "OFF");
   Serial.println("------------------");
   Serial.println();
 }
@@ -134,12 +142,16 @@ static void handleCommand(const String& cmd) {
   else if (cmd == "scan")     printScan();
   else if (cmd == "drv")      printDrvRegisters();
   else if (cmd == "log")      printLogStatus();
-  else if (cmd == "log adc")  { logFlags.adc  = !logFlags.adc;  Serial.printf("[LOG] ADC:  %s\n", logFlags.adc  ? "ON" : "OFF"); }
-  else if (cmd == "log drv")  { logFlags.drv  = !logFlags.drv;  Serial.printf("[LOG] DRV:  %s\n", logFlags.drv  ? "ON" : "OFF"); }
-  else if (cmd == "log fota") { logFlags.fota = !logFlags.fota; Serial.printf("[LOG] FOTA: %s\n", logFlags.fota ? "ON" : "OFF"); }
-  else if (cmd == "log warn") { logFlags.warn = !logFlags.warn; Serial.printf("[LOG] WARN: %s\n", logFlags.warn ? "ON" : "OFF"); }
-  else if (cmd == "log off")  { logFlags = {false, false, false, false}; Serial.println("[LOG] Alle Loop-Logs AUS"); }
-  else if (cmd == "log on")   { logFlags = {true, true, true, true};     Serial.println("[LOG] Alle Loop-Logs AN"); }
+  else if (cmd == "log adc")   { logFlags.adc   = !logFlags.adc;   Serial.printf("[LOG] ADC:   %s\n", logFlags.adc   ? "ON" : "OFF"); }
+  else if (cmd == "log drv")   { logFlags.drv   = !logFlags.drv;   Serial.printf("[LOG] DRV:   %s\n", logFlags.drv   ? "ON" : "OFF"); }
+  else if (cmd == "log fota")  { logFlags.fota  = !logFlags.fota;  Serial.printf("[LOG] FOTA:  %s\n", logFlags.fota  ? "ON" : "OFF"); }
+  else if (cmd == "log warn")  { logFlags.warn  = !logFlags.warn;  Serial.printf("[LOG] WARN:  %s\n", logFlags.warn  ? "ON" : "OFF"); }
+  else if (cmd == "log ws")    { logFlags.ws    = !logFlags.ws;    Serial.printf("[LOG] WS:    %s\n", logFlags.ws    ? "ON" : "OFF"); }
+  else if (cmd == "log net")   { logFlags.net   = !logFlags.net;   Serial.printf("[LOG] NET:   %s\n", logFlags.net   ? "ON" : "OFF"); }
+  else if (cmd == "log http")  { logFlags.http  = !logFlags.http;  Serial.printf("[LOG] HTTP:  %s\n", logFlags.http  ? "ON" : "OFF"); }
+  else if (cmd == "log servo") { logFlags.servo = !logFlags.servo; Serial.printf("[LOG] SERVO: %s\n", logFlags.servo ? "ON" : "OFF"); }
+  else if (cmd == "log off")   { logFlags = {false, false, false, false, false, false, false, false}; Serial.println("[LOG] Alle Loop-Logs AUS"); }
+  else if (cmd == "log on")    { logFlags = {true, true, true, true, true, true, true, true};         Serial.println("[LOG] Alle Loop-Logs AN"); }
   else if (cmd == "reboot") {
     Serial.println("[CMD] Reboot...");
     delay(200);

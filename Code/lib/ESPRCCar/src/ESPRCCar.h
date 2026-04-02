@@ -11,7 +11,6 @@
 #include "rc_network.h"
 #include "rc_websocket.h"
 #include "rc_httpapi.h"
-#include "rc_led.h"
 #include "rc_fs.h"
 #include "rc_ota.h"
 #include "rc_serial.h"

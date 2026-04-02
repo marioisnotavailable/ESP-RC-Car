@@ -1,6 +1,7 @@
 #include "rc_network.h"
 #include "rc_settings.h"
 #include "rc_httpapi.h"
+#include "rc_serial.h"
 
 std::vector<WifiNet> savedNets;
 std::vector<ScanNet> lastScan;
@@ -46,6 +47,10 @@ void rc_network_load() {
   prefs.begin("wifi", false);
   String raw = prefs.getString("nets", "");
   prefs.end();
+
+  if (logFlags.net)
+    Serial.printf("[NET] NVS geladen, raw len=%d\n", (int)raw.length());
+
   if (raw.length() == 0) return;
 
   int pos = 0;
@@ -81,6 +86,9 @@ void rc_network_load() {
     }
     if (n.ssid.length() > 0) savedNets.push_back(n);
   }
+
+  if (logFlags.net)
+    Serial.printf("[NET] %d Netzwerk(e) geladen\n", (int)savedNets.size());
 }
 
 void rc_network_save() {
@@ -100,23 +108,35 @@ void rc_network_save() {
   prefs.begin("wifi", false);
   prefs.putString("nets", out);
   prefs.end();
+  if (logFlags.net)
+    Serial.printf("[NET] %d Netzwerk(e) gespeichert (%d bytes)\n", (int)savedNets.size(), (int)out.length());
 }
 
 bool rc_network_add(const String& ssid, const String& pass) {
   if (ssid.length() == 0) return false;
   for (auto& n : savedNets)
-    if (n.ssid == ssid) { n.pass = pass; rc_network_save(); return true; }
-  if (savedNets.size() >= 16) return false;
+    if (n.ssid == ssid) {
+      n.pass = pass;
+      rc_network_save();
+      if (logFlags.net) Serial.printf("[NET] Netzwerk aktualisiert: \"%s\"\n", ssid.c_str());
+      return true;
+    }
+  if (savedNets.size() >= 16) {
+    if (logFlags.net) Serial.println("[NET] Max 16 Netzwerke erreicht");
+    return false;
+  }
   WifiNet nw;
   nw.ssid = ssid; nw.pass = pass;
   memset(nw.bssid, 0, 6); nw.channel = 0;
   savedNets.push_back(nw);
   rc_network_save();
+  if (logFlags.net) Serial.printf("[NET] Netzwerk hinzugefuegt: \"%s\" (#%d)\n", ssid.c_str(), (int)savedNets.size());
   return true;
 }
 
 bool rc_network_delete(int idx) {
   if (idx < 0 || (size_t)idx >= savedNets.size()) return false;
+  if (logFlags.net) Serial.printf("[NET] Netzwerk geloescht: \"%s\" (idx=%d)\n", savedNets[idx].ssid.c_str(), idx);
   savedNets.erase(savedNets.begin() + idx);
   rc_network_save();
   return true;
@@ -125,6 +145,7 @@ bool rc_network_delete(int idx) {
 // ---- WiFi scan ----
 void rc_wifi_scan() {
   lastScan.clear();
+  if (logFlags.net) Serial.println("[NET] WiFi-Scan gestartet...");
   WiFi.mode(WIFI_AP_STA);
   int n = WiFi.scanNetworks(false, true, true, SCAN_DWELL_MS);
   for (int i = 0; i < n; ++i) {
@@ -132,29 +153,38 @@ void rc_wifi_scan() {
     lastScan.push_back(s);
   }
   WiFi.scanDelete();
-  Serial.printf("[WiFi] Scan found %d network(s)\n", (int)lastScan.size());
+  Serial.printf("[NET] Scan: %d Netzwerk(e) gefunden\n", (int)lastScan.size());
 }
 
 // ---- WiFi connect ----
 bool rc_wifi_connect() {
-  if (startConfigPortal || savedNets.empty()) return false;
+  if (startConfigPortal || savedNets.empty()) {
+    if (logFlags.net)
+      Serial.printf("[NET] WiFi connect uebersprungen (portal=%d, nets=%d)\n",
+        startConfigPortal, (int)savedNets.size());
+    return false;
+  }
 
   WiFi.persistent(false);
   WiFi.setSleep(false);
   WiFi.mode(WIFI_STA);
   rc_apply_wifi_tx_power();
 
+  if (logFlags.net)
+    Serial.printf("[NET] WiFi STA Modus, TX Power Level=%d, %d Netzwerk(e) gespeichert\n",
+      settings.wifiTxPower, (int)savedNets.size());
+
   auto tryConnect = [&](size_t i, uint32_t timeoutMs, bool useCached) -> bool {
     WiFi.disconnect(true);
     delay(100);
     if (useCached && hasCachedBssid(savedNets[i])) {
-      Serial.printf("[WiFi] [%u/%u] Fast connect \"%s\" (ch=%d) ...\n",
+      Serial.printf("[NET] [%u/%u] Fast connect \"%s\" (ch=%d) ...\n",
         (unsigned)(i+1), (unsigned)savedNets.size(),
         savedNets[i].ssid.c_str(), (int)savedNets[i].channel);
       WiFi.begin(savedNets[i].ssid.c_str(), savedNets[i].pass.c_str(),
         savedNets[i].channel, savedNets[i].bssid);
     } else {
-      Serial.printf("[WiFi] [%u/%u] Trying \"%s\" (pass len=%u) ...\n",
+      Serial.printf("[NET] [%u/%u] Trying \"%s\" (pass len=%u) ...\n",
         (unsigned)(i+1), (unsigned)savedNets.size(),
         savedNets[i].ssid.c_str(), (unsigned)savedNets[i].pass.length());
       WiFi.begin(savedNets[i].ssid.c_str(), savedNets[i].pass.c_str());
@@ -163,26 +193,30 @@ bool rc_wifi_connect() {
     while (millis() - t0 < timeoutMs) {
       wl_status_t status = WiFi.status();
       if (status == WL_CONNECTED) {
-        Serial.printf("[WiFi] Connected to \"%s\" (RSSI: %d) after %lums\n",
-          WiFi.SSID().c_str(), WiFi.RSSI(), millis() - t0);
+        Serial.printf("[NET] Connected to \"%s\" (RSSI: %d, ch=%d) after %lums\n",
+          WiFi.SSID().c_str(), WiFi.RSSI(), WiFi.channel(), millis() - t0);
         return true;
       }
       if (status == WL_CONNECT_FAILED || status == WL_NO_SSID_AVAIL) {
         const char* reason = (status == WL_CONNECT_FAILED)
           ? "FAILED - wrong password or auth rejected"
           : "NO_SSID - network not found (out of range or 5GHz only)";
-        Serial.printf("[WiFi] \"%s\": %s | %lums\n", savedNets[i].ssid.c_str(), reason, millis() - t0);
+        Serial.printf("[NET] \"%s\": %s | %lums\n", savedNets[i].ssid.c_str(), reason, millis() - t0);
         return false;
       }
+      if (logFlags.net && ((millis() - t0) % 1000 < WIFI_CONNECT_POLL_MS))
+        Serial.printf("[NET] \"%s\": waiting... status=%d %lums\n",
+          savedNets[i].ssid.c_str(), (int)status, millis() - t0);
       delay(WIFI_CONNECT_POLL_MS);
     }
-    Serial.printf("[WiFi] \"%s\": timeout after %lums\n", savedNets[i].ssid.c_str(), timeoutMs);
+    Serial.printf("[NET] \"%s\": timeout after %lums\n", savedNets[i].ssid.c_str(), timeoutMs);
     return false;
   };
 
   bool connected = false;
 
   // Phase 1: Fast connect with cached BSSID/channel
+  if (logFlags.net) Serial.println("[NET] Phase 1: Fast connect (cached BSSID)...");
   for (size_t i = 0; i < savedNets.size() && !connected; ++i) {
     if (hasCachedBssid(savedNets[i]))
       connected = tryConnect(i, 5000, true);
@@ -190,8 +224,10 @@ bool rc_wifi_connect() {
 
   // Phase 2: Normal connect
   if (!connected) {
-    Serial.println("[WiFi] Fast connect failed, trying normal scan...");
+    Serial.println("[NET] Phase 2: Normal scan connect...");
     uint32_t perNet = WIFI_CONNECT_TOTAL_MS / savedNets.size();
+    if (logFlags.net)
+      Serial.printf("[NET] %lums pro Netzwerk\n", (unsigned long)perNet);
     for (size_t i = 0; i < savedNets.size() && !connected; ++i) {
       connected = tryConnect(i, perNet, false);
     }
@@ -207,15 +243,15 @@ bool rc_wifi_connect() {
         memcpy(n.bssid, bssid, 6);
         n.channel = ch;
         rc_network_save();
-        Serial.printf("[WiFi] Cached BSSID=%02X:%02X:%02X:%02X:%02X:%02X ch=%d for \"%s\"\n",
-          bssid[0], bssid[1], bssid[2], bssid[3], bssid[4], bssid[5], ch, connSsid.c_str());
+        if (logFlags.net)
+          Serial.printf("[NET] Cached BSSID=%02X:%02X:%02X:%02X:%02X:%02X ch=%d for \"%s\"\n",
+            bssid[0], bssid[1], bssid[2], bssid[3], bssid[4], bssid[5], ch, connSsid.c_str());
         break;
       }
     }
   }
 
-  if (!connected) Serial.println("[WiFi] All networks failed");
-  Serial.println();
+  if (!connected) Serial.println("[NET] Alle Netzwerke fehlgeschlagen");
   return connected;
 }
 
@@ -223,8 +259,10 @@ bool rc_wifi_connect() {
 bool rc_wifi_setup() {
   bool connected = rc_wifi_connect();
   if (connected) {
-    Serial.printf("[WiFi] Connected. IP=%s\n", WiFi.localIP().toString().c_str());
+    Serial.printf("[NET] Verbunden. IP=%s RSSI=%d Gateway=%s\n",
+      WiFi.localIP().toString().c_str(), WiFi.RSSI(), WiFi.gatewayIP().toString().c_str());
   } else {
+    Serial.println("[NET] Starte Config-Portal...");
     rc_start_portal();
   }
   return connected;
@@ -254,13 +292,15 @@ void rc_mrd_loop() {
     prefsMRD.putUChar("cnt", 0);
     prefsMRD.end();
     mrdCleared = true;
-    Serial.println("[MRD] window expired; counter cleared (NVS)");
+    if (logFlags.net) Serial.println("[MRD] window expired; counter cleared (NVS)");
   }
 }
 
 // ---- UDP Discovery ----
 void rc_udp_begin() {
   udp.begin(DISCOVERY_PORT);
+  if (logFlags.net)
+    Serial.printf("[NET] UDP Discovery auf Port %d gestartet\n", DISCOVERY_PORT);
 }
 
 void rc_udp_loop() {
@@ -277,6 +317,12 @@ void rc_udp_loop() {
       udp.beginPacket(udp.remoteIP(), udp.remotePort());
       udp.write((const uint8_t*)msg, strlen(msg));
       udp.endPacket();
+      if (logFlags.net)
+        Serial.printf("[NET] Discovery Query von %s:%d -> %s\n",
+          udp.remoteIP().toString().c_str(), udp.remotePort(), msg);
+    } else {
+      if (logFlags.net)
+        Serial.printf("[NET] UDP unbekannt (%d bytes): '%s'\n", packetSize, buf);
     }
   }
 
@@ -293,5 +339,7 @@ void rc_udp_loop() {
     udp.beginPacket(IPAddress(255, 255, 255, 255), DISCOVERY_PORT);
     udp.write((const uint8_t*)msg, strlen(msg));
     udp.endPacket();
+    if (logFlags.net)
+      Serial.printf("[NET] Beacon -> %s + 255.255.255.255\n", bcast.toString().c_str());
   }
 }

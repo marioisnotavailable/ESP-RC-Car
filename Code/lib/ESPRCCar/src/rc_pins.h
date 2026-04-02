@@ -16,9 +16,6 @@ static constexpr uint8_t PIN_INLB = 9;
 static constexpr uint8_t PIN_INHC = 10;
 static constexpr uint8_t PIN_INLC = 11;
 
-// ── LED ──
-#define LED_PIN 13
-
 // ── Servo / Steering ──
 #define LENKUNG_PIN 5   // NOTE: conflicts with PIN_DRV_MISO, servo disabled
 

@@ -1,5 +1,6 @@
 #include "rc_steering.h"
 #include "rc_settings.h"
+#include "rc_serial.h"
 #include "rc_pins.h"
 #include "driver/gpio.h"
 
@@ -64,7 +65,8 @@ void rc_steering_init_ledc() {
   }
   ledcAttachPin(LENKUNG_PIN, SERVO_CH);
   ledcWrite(SERVO_CH, usToDuty(SERVO_MID_US, SERVO_RES_BITS));
-  Serial.println("[SERVO] LEDC aktiv");
+  Serial.printf("[SERVO] LEDC aktiv (CH=%d, freq=%d, bits=%d, mid=%dus)\n",
+    SERVO_CH, SERVO_FREQ, SERVO_RES_BITS, SERVO_MID_US);
 }
 
 void rc_steering_write_us(int targetUs) {
@@ -80,6 +82,10 @@ void rc_steering_write_us(int targetUs) {
   } else {
     currentServoUs = targetUs;
   }
+
+  if (logFlags.servo)
+    Serial.printf("[SERVO] write_us target=%d -> actual=%d (%s)\n",
+      targetUs, currentServoUs, g_useTimerFallback ? "timer" : "ledc");
 
   if (!g_useTimerFallback) {
     ledcWrite(SERVO_CH, usToDuty((uint16_t)currentServoUs, SERVO_RES_BITS));
@@ -99,4 +105,9 @@ void rc_steering_apply(int16_t steerInput) {
   float halfSpan = 0.5f * (float)(SERVO_MAX_US - SERVO_MIN_US);
   int targetUs = SERVO_MID_US + (int)(steerFilt * settings.steerGain * (halfSpan / 1000.0f));
   currentServoUs = constrain(targetUs, SERVO_MIN_US, SERVO_MAX_US);
+
+  if (logFlags.servo)
+    Serial.printf("[SERVO] input=%d dz=%d inv=%d filt=%.1f gain=%.2f -> %dus\n",
+      steerInput, (int)(abs(steerInput) < (int)settings.steerDeadzone),
+      settings.steerInvert, steerFilt, settings.steerGain, currentServoUs);
 }

@@ -176,7 +176,7 @@ void rc_boot_log() {
   Serial.println("Serial Commands (type 'help' for details):");
   Serial.println("  status | settings | reboot | ota | portal");
   Serial.println("  wifi | scan | drv | motor off/a/b");
-  Serial.println("  log off/on/adc/drv/fota/warn");
+  Serial.println("  log off/on/adc/drv/fota/warn/ws/net/http/servo");
   Serial.println();
   Serial.println("[BOOT] Initializing DRV8323, Battery Monitor, WiFi & Control...");
 }
@@ -192,13 +192,23 @@ void rc_ota_setup(bool connected) {
 
 void rc_ota_loop() {
   if (!settings.otaEnabled) return;
-  if (WiFi.status() != WL_CONNECTED) return;
+  if (WiFi.status() != WL_CONNECTED) {
+    if (logFlags.fota) {
+      static uint32_t lastWarn = 0;
+      if (millis() - lastWarn > 30000) {
+        Serial.println("[FOTA] Skipped — WiFi not connected");
+        lastWarn = millis();
+      }
+    }
+    return;
+  }
   if (!(WiFi.getMode() & WIFI_MODE_STA)) return;
 
   uint32_t now = millis();
   if (now >= nextFotaCheckMs) {
     nextFotaCheckMs = now + fotaCheckIntervalMs;
-    if (logFlags.fota) Serial.println("[FOTA] Checking for update...");
+    if (logFlags.fota) Serial.printf("[FOTA] Checking for update... (next in %lus)\n",
+      fotaCheckIntervalMs / 1000);
     fotaCheckAndUpdate();
   }
 }

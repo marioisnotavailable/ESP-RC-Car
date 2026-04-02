@@ -2,6 +2,7 @@
 #include "rc_settings.h"
 #include "rc_battery.h"
 #include "rc_network.h"
+#include "rc_serial.h"
 #include "rc_pins.h"
 #include <LittleFS.h>
 
@@ -27,8 +28,12 @@ static String getContentType(const String& path) {
 
 static bool serveFile(const String& path) {
   File f = LittleFS.open(path, "r");
-  if (!f) return false;
+  if (!f) {
+    if (logFlags.http) Serial.printf("[HTTP] File not found: %s\n", path.c_str());
+    return false;
+  }
   String ct = getContentType(path);
+  if (logFlags.http) Serial.printf("[HTTP] Serving %s (%d bytes, %s)\n", path.c_str(), (int)f.size(), ct.c_str());
   httpServer.streamFile(f, ct);
   f.close();
   return true;
@@ -79,6 +84,7 @@ void rc_start_portal() {
 
   // ---- JSON API ----
   httpServer.on("/api/saved", HTTP_GET, []() {
+    if (logFlags.http) Serial.printf("[HTTP] GET /api/saved (%d nets)\n", (int)savedNets.size());
     String j = "[";
     for (size_t i = 0; i < savedNets.size(); ++i) {
       if (i) j += ',';
@@ -91,30 +97,38 @@ void rc_start_portal() {
   httpServer.on("/api/save", HTTP_POST, []() {
     String ssid = httpServer.arg("ssid");
     String pass = httpServer.arg("pass");
+    if (logFlags.http) Serial.printf("[HTTP] POST /api/save ssid=\"%s\" pass_len=%d\n", ssid.c_str(), (int)pass.length());
     bool ok = rc_network_add(ssid, pass);
+    if (logFlags.http) Serial.printf("[HTTP] /api/save result: %s\n", ok ? "OK" : "FAIL");
     httpServer.send(200, "application/json", String("{\"ok\":") + (ok ? "true" : "false") + "}");
   });
 
   httpServer.on("/api/delete", HTTP_POST, []() {
     int idx = httpServer.arg("i").toInt();
+    if (logFlags.http) Serial.printf("[HTTP] POST /api/delete idx=%d\n", idx);
     bool ok = rc_network_delete(idx);
+    if (logFlags.http) Serial.printf("[HTTP] /api/delete result: %s\n", ok ? "OK" : "FAIL");
     httpServer.send(200, "application/json", String("{\"ok\":") + (ok ? "true" : "false") + "}");
   });
 
   httpServer.on("/api/move", HTTP_POST, []() {
     int from = httpServer.arg("from").toInt();
     int to   = httpServer.arg("to").toInt();
+    if (logFlags.http) Serial.printf("[HTTP] POST /api/move from=%d to=%d\n", from, to);
     bool ok  = false;
     if (from >= 0 && from < (int)savedNets.size() && to >= 0 && to < (int)savedNets.size() && from != to) {
       std::swap(savedNets[from], savedNets[to]);
       rc_network_save();
       ok = true;
     }
+    if (logFlags.http) Serial.printf("[HTTP] /api/move result: %s\n", ok ? "OK" : "FAIL");
     httpServer.send(200, "application/json", String("{\"ok\":") + (ok ? "true" : "false") + "}");
   });
 
   httpServer.on("/api/scan", HTTP_POST, []() {
+    if (logFlags.http) Serial.println("[HTTP] POST /api/scan — starting WiFi scan...");
     rc_wifi_scan();
+    if (logFlags.http) Serial.printf("[HTTP] /api/scan result: %d networks\n", (int)lastScan.size());
     String j = "[";
     for (size_t i = 0; i < lastScan.size(); ++i) {
       if (i) j += ',';
@@ -127,6 +141,7 @@ void rc_start_portal() {
   });
 
   httpServer.on("/api/adc", HTTP_GET, []() {
+    if (logFlags.http) Serial.printf("[HTTP] GET /api/adc (vBatt=%.2f, %d%%)\n", vBatt_float_last, batteryPercent);
     char j[128];
     snprintf(j, sizeof(j), "{\"vAdc\":%.3f,\"vBatt\":%.2f,\"percent\":%d}",
       vAdc_last, vBatt_float_last, batteryPercent);
@@ -134,15 +149,17 @@ void rc_start_portal() {
   });
 
   httpServer.on("/api/restart-charge", HTTP_POST, []() {
+    if (logFlags.http) Serial.println("[HTTP] POST /api/restart-charge");
     pinMode(CHARGE_RESTART_PIN, OUTPUT);
     digitalWrite(CHARGE_RESTART_PIN, HIGH);
     delay(100);
     digitalWrite(CHARGE_RESTART_PIN, LOW);
-    Serial.println("[DEBUG] GPIO47 pulsed HIGH->LOW (restart charging)");
+    Serial.println("[HTTP] GPIO47 pulsed HIGH->LOW (restart charging)");
     httpServer.send(200, "application/json", "{\"ok\":true}");
   });
 
   httpServer.on("/api/reboot", HTTP_POST, []() {
+    Serial.println("[HTTP] POST /api/reboot — restarting...");
     httpServer.send(200, "application/json", "{\"ok\":true}");
     delay(200);
     ESP.restart();
@@ -150,6 +167,7 @@ void rc_start_portal() {
 
   // ---- Settings API ----
   httpServer.on("/api/settings", HTTP_GET, []() {
+    if (logFlags.http) Serial.println("[HTTP] GET /api/settings");
     String j = "{";
     j += "\"otaEnabled\":" + String(settings.otaEnabled ? "true" : "false") + ",";
     j += "\"otaIntervalMs\":" + String(settings.otaIntervalMs) + ",";
@@ -172,6 +190,7 @@ void rc_start_portal() {
   });
 
   httpServer.on("/api/settings", HTTP_POST, []() {
+    if (logFlags.http) Serial.printf("[HTTP] POST /api/settings (%d args)\n", httpServer.args());
     if (httpServer.hasArg("otaEnabled"))
       settings.otaEnabled = (httpServer.arg("otaEnabled") == "1");
     if (httpServer.hasArg("otaIntervalMs"))
@@ -213,6 +232,7 @@ void rc_start_portal() {
         settings.adcCorrFactor = realV / (vBatt_float_last / settings.adcCorrFactor);
     }
     rc_settings_save();
+    if (logFlags.http) Serial.println("[HTTP] Settings saved");
     httpServer.send(200, "application/json", "{\"ok\":true}");
   });
 
