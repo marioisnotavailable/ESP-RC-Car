@@ -6,135 +6,138 @@
 #include "rc_websocket.h"
 #include "rc_httpapi.h"
 #include "rc_ota.h"
+#include "rc_console.h"
 
 LogFlags logFlags = { true, true, true, true, true, true, true, true };
 
 static void printHelp() {
-  Serial.println();
-  Serial.println("=== Serial Commands ===");
-  Serial.println("  help        — Diese Hilfe anzeigen");
-  Serial.println("  status      — Batterie, WiFi, Motor Status");
-  Serial.println("  settings    — Alle Einstellungen anzeigen");
-  Serial.println("  reboot      — ESP neustarten");
-  Serial.println("  ota         — OTA Update jetzt pruefen");
-  Serial.println("  portal      — Config-Portal starten");
-  Serial.println("  wifi        — Gespeicherte Netzwerke anzeigen");
-  Serial.println("  scan        — WLAN-Scan durchfuehren");
-  Serial.println("  drv         — DRV8323S Register auslesen");
-  Serial.println("  motor off   — Motor ausschalten");
-  Serial.println("  motor a     — Motor Phase A aktivieren");
-  Serial.println("  motor b     — Motor Phase B aktivieren");
-  Serial.println("  log         — Log-Gruppen Status anzeigen");
-  Serial.println("  log adc     — [ADC] Batterie-Logs toggeln");
-  Serial.println("  log drv     — [DRV] Motor-Logs toggeln");
-  Serial.println("  log fota    — [FOTA] OTA-Logs toggeln");
-  Serial.println("  log warn    — [WARN] Warnungs-Logs toggeln");
-  Serial.println("  log ws      — [WS] WebSocket-Logs toggeln");
-  Serial.println("  log net     — [NET] Netzwerk-Logs toggeln");
-  Serial.println("  log http    — [HTTP] HTTP-API-Logs toggeln");
-  Serial.println("  log servo   — [SERVO] Steering-Logs toggeln");
-  Serial.println("  log off     — Alle Loop-Logs aus");
-  Serial.println("  log on      — Alle Loop-Logs an");
-  Serial.println("=======================");
-  Serial.println();
+  console.println();
+  console.println("=== Serial Commands ===");
+  console.println("  help        — Diese Hilfe anzeigen");
+  console.println("  status      — Batterie, WiFi, Motor Status");
+  console.println("  settings    — Alle Einstellungen anzeigen");
+  console.println("  reboot      — ESP neustarten");
+  console.println("  ota         — OTA Update jetzt pruefen");
+  console.println("  portal      — Config-Portal starten");
+  console.println("  panel       — Config-Panel im aktuellen WLAN starten (ohne AP)");
+  console.println("  wifi        — Gespeicherte Netzwerke anzeigen");
+  console.println("  scan        — WLAN-Scan durchfuehren");
+  console.println("  drv         — DRV8323S Register auslesen");
+  console.println("  motor off   — Motor ausschalten");
+  console.println("  motor a     — Motor Phase A aktivieren");
+  console.println("  motor b     — Motor Phase B aktivieren");
+  console.println("  log         — Log-Gruppen Status anzeigen");
+  console.println("  log adc     — [ADC] Batterie-Logs toggeln");
+  console.println("  log drv     — [DRV] Motor-Logs toggeln");
+  console.println("  log fota    — [FOTA] OTA-Logs toggeln");
+  console.println("  log warn    — [WARN] Warnungs-Logs toggeln");
+  console.println("  log ws      — [WS] WebSocket-Logs toggeln");
+  console.println("  log net     — [NET] Netzwerk-Logs toggeln");
+  console.println("  log http    — [HTTP] HTTP-API-Logs toggeln");
+  console.println("  log servo   — [SERVO] Steering-Logs toggeln");
+  console.println("  log off     — Alle Loop-Logs aus");
+  console.println("  log on      — Alle Loop-Logs an");
+  console.println("=======================");
+  console.println();
 }
 
 static void printLogStatus() {
-  Serial.println();
-  Serial.println("--- Log Groups ---");
-  Serial.printf("  [ADC]   Batterie:    %s\n", logFlags.adc   ? "ON" : "OFF");
-  Serial.printf("  [DRV]   Motor:       %s\n", logFlags.drv   ? "ON" : "OFF");
-  Serial.printf("  [FOTA]  OTA:         %s\n", logFlags.fota  ? "ON" : "OFF");
-  Serial.printf("  [WARN]  Warnungen:   %s\n", logFlags.warn  ? "ON" : "OFF");
-  Serial.printf("  [WS]    WebSocket:   %s\n", logFlags.ws    ? "ON" : "OFF");
-  Serial.printf("  [NET]   Netzwerk:    %s\n", logFlags.net   ? "ON" : "OFF");
-  Serial.printf("  [HTTP]  HTTP-API:    %s\n", logFlags.http  ? "ON" : "OFF");
-  Serial.printf("  [SERVO] Steering:    %s\n", logFlags.servo ? "ON" : "OFF");
-  Serial.println("------------------");
-  Serial.println();
+  console.println();
+  console.println("--- Log Groups ---");
+  console.printf("  [ADC]   Batterie:    %s\n", logFlags.adc   ? "ON" : "OFF");
+  console.printf("  [DRV]   Motor:       %s\n", logFlags.drv   ? "ON" : "OFF");
+  console.printf("  [FOTA]  OTA:         %s\n", logFlags.fota  ? "ON" : "OFF");
+  console.printf("  [WARN]  Warnungen:   %s\n", logFlags.warn  ? "ON" : "OFF");
+  console.printf("  [WS]    WebSocket:   %s\n", logFlags.ws    ? "ON" : "OFF");
+  console.printf("  [NET]   Netzwerk:    %s\n", logFlags.net   ? "ON" : "OFF");
+  console.printf("  [HTTP]  HTTP-API:    %s\n", logFlags.http  ? "ON" : "OFF");
+  console.printf("  [SERVO] Steering:    %s\n", logFlags.servo ? "ON" : "OFF");
+  console.println("------------------");
+  console.println();
 }
 
 static void printStatus() {
-  Serial.println();
-  Serial.println("--- Status ---");
-  Serial.printf("  Firmware:    %s\n", FOTA_CURRENT_VERSION);
-  Serial.printf("  Batterie:    %.2fV (%d%%)\n", vBatt_float_last, batteryPercent);
-  Serial.printf("  WiFi Mode:   %s\n",
+  console.println();
+  console.println("--- Status ---");
+  console.printf("  Firmware:    %s\n", FOTA_CURRENT_VERSION);
+  console.printf("  Batterie:    %.2fV (%d%%)\n", vBatt_float_last, batteryPercent);
+  console.printf("  WiFi Mode:   %s\n",
     (WiFi.getMode() & WIFI_MODE_STA) ? "STA" :
     (WiFi.getMode() & WIFI_MODE_AP)  ? "AP"  : "OFF");
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.printf("  SSID:        %s\n", WiFi.SSID().c_str());
-    Serial.printf("  IP:          %s\n", WiFi.localIP().toString().c_str());
-    Serial.printf("  RSSI:        %d dBm\n", WiFi.RSSI());
+    console.printf("  SSID:        %s\n", WiFi.SSID().c_str());
+    console.printf("  IP:          %s\n", WiFi.localIP().toString().c_str());
+    console.printf("  RSSI:        %d dBm\n", WiFi.RSSI());
   } else if (WiFi.getMode() & WIFI_MODE_AP) {
-    Serial.printf("  AP IP:       %s\n", WiFi.softAPIP().toString().c_str());
-    Serial.printf("  AP Clients:  %d\n", WiFi.softAPgetStationNum());
+    console.printf("  AP IP:       %s\n", WiFi.softAPIP().toString().c_str());
+    console.printf("  AP Clients:  %d\n", WiFi.softAPgetStationNum());
   }
-  Serial.printf("  WS Clients:  %d\n", ws.connectedClients());
-  Serial.printf("  Throttle:    %d\n", lastCmd.throttle);
-  Serial.printf("  Steer:       %d\n", lastCmd.steer);
-  Serial.printf("  DRV Fault:   %s\n", drv.hasFault() ? "JA" : "Nein");
-  Serial.printf("  Uptime:      %lus\n", millis() / 1000);
-  Serial.println("--------------");
-  Serial.println();
+  console.printf("  WS Clients:  %d\n", ws.connectedClients());
+  console.printf("  Throttle:    %d\n", lastCmd.throttle);
+  console.printf("  Steer:       %d\n", lastCmd.steer);
+  console.printf("  DRV Fault:   %s\n", drv.hasFault() ? "JA" : "Nein");
+  console.printf("  Uptime:      %lus\n", millis() / 1000);
+  console.println("--------------");
+  console.println();
 }
 
 static void printSettings() {
-  Serial.println();
-  Serial.println("--- Settings ---");
-  Serial.printf("  OTA:           %s (interval %lums)\n",
+  console.println();
+  console.println("--- Settings ---");
+  console.printf("  OTA:           %s (interval %lums)\n",
     settings.otaEnabled ? "ON" : "OFF", settings.otaIntervalMs);
-  Serial.printf("  WiFi TX:       %d\n", settings.wifiTxPower);
-  Serial.printf("  Failsafe:      %dms\n", settings.failsafeMs);
-  Serial.printf("  Beacon:        %lums\n", settings.beaconIntervalMs);
-  Serial.printf("  AP Prefix:     %s\n", settings.apPrefix);
-  Serial.printf("  Steer Invert:  %s\n", settings.steerInvert ? "JA" : "NEIN");
-  Serial.printf("  Steer Gain:    %.2f\n", settings.steerGain);
-  Serial.printf("  Steer DZ:      %d\n", settings.steerDeadzone);
-  Serial.printf("  Steer Filter:  %.2f\n", settings.steerFilter);
-  Serial.printf("  Batt Warn:     %.1fV\n", settings.battWarnV);
-  Serial.printf("  Batt Off:      %.1fV\n", settings.battOffV);
-  Serial.printf("  Max Throttle:  %d%%\n", settings.maxThrottlePct);
-  Serial.printf("  ADC Corr:      %.4f\n", settings.adcCorrFactor);
-  Serial.println("----------------");
-  Serial.println();
+  console.printf("  WiFi TX:       %d\n", settings.wifiTxPower);
+  console.printf("  Failsafe:      %dms\n", settings.failsafeMs);
+  console.printf("  Beacon:        %lums\n", settings.beaconIntervalMs);
+  console.printf("  AP Prefix:     %s\n", settings.apPrefix);
+  console.printf("  Always Panel:  %s\n", settings.alwaysStartPanel ? "JA" : "NEIN");
+  console.printf("  Steer Invert:  %s\n", settings.steerInvert ? "JA" : "NEIN");
+  console.printf("  Steer Gain:    %.2f\n", settings.steerGain);
+  console.printf("  Steer DZ:      %d\n", settings.steerDeadzone);
+  console.printf("  Steer Filter:  %.2f\n", settings.steerFilter);
+  console.printf("  Batt Warn:     %.1fV\n", settings.battWarnV);
+  console.printf("  Batt Off:      %.1fV\n", settings.battOffV);
+  console.printf("  Max Throttle:  %d%%\n", settings.maxThrottlePct);
+  console.printf("  ADC Corr:      %.4f\n", settings.adcCorrFactor);
+  console.println("----------------");
+  console.println();
 }
 
 static void printWifi() {
-  Serial.println();
-  Serial.printf("--- Gespeicherte Netzwerke (%d) ---\n", (int)savedNets.size());
+  console.println();
+  console.printf("--- Gespeicherte Netzwerke (%d) ---\n", (int)savedNets.size());
   for (size_t i = 0; i < savedNets.size(); i++) {
-    Serial.printf("  [%d] %s (pass len=%d)\n",
+    console.printf("  [%d] %s (pass len=%d)\n",
       (int)i, savedNets[i].ssid.c_str(), (int)savedNets[i].pass.length());
   }
-  Serial.println();
+  console.println();
 }
 
 static void printScan() {
-  Serial.println("[WiFi] Scanning...");
+  console.println("[WiFi] Scanning...");
   rc_wifi_scan();
-  Serial.printf("--- Scan: %d Netzwerke ---\n", (int)lastScan.size());
+  console.printf("--- Scan: %d Netzwerke ---\n", (int)lastScan.size());
   for (size_t i = 0; i < lastScan.size(); i++) {
-    Serial.printf("  %s (%d dBm) %s\n",
+    console.printf("  %s (%d dBm) %s\n",
       lastScan[i].ssid.c_str(), lastScan[i].rssi,
       lastScan[i].enc == 0 ? "OPEN" : "ENCRYPTED");
   }
-  Serial.println();
+  console.println();
 }
 
 static void printDrvRegisters() {
-  Serial.println();
-  Serial.println("--- DRV8323S Register ---");
+  console.println();
+  console.println("--- DRV8323S Register ---");
   for (uint8_t reg = 0; reg <= 6; reg++) {
     uint16_t val = drv.readRegister(reg);
-    Serial.printf("  Reg 0x%X = 0x%03X\n", reg, val);
+    console.printf("  Reg 0x%X = 0x%03X\n", reg, val);
   }
-  Serial.printf("  nFAULT: %s\n", drv.hasFault() ? "LOW (Fault!)" : "HIGH (OK)");
-  Serial.println("------------------------");
-  Serial.println();
+  console.printf("  nFAULT: %s\n", drv.hasFault() ? "LOW (Fault!)" : "HIGH (OK)");
+  console.println("------------------------");
+  console.println();
 }
 
-static void handleCommand(const String& cmd) {
+void rc_handle_command(const String& cmd) {
   if (cmd == "help")          printHelp();
   else if (cmd == "status")   printStatus();
   else if (cmd == "settings") printSettings();
@@ -142,43 +145,49 @@ static void handleCommand(const String& cmd) {
   else if (cmd == "scan")     printScan();
   else if (cmd == "drv")      printDrvRegisters();
   else if (cmd == "log")      printLogStatus();
-  else if (cmd == "log adc")   { logFlags.adc   = !logFlags.adc;   Serial.printf("[LOG] ADC:   %s\n", logFlags.adc   ? "ON" : "OFF"); }
-  else if (cmd == "log drv")   { logFlags.drv   = !logFlags.drv;   Serial.printf("[LOG] DRV:   %s\n", logFlags.drv   ? "ON" : "OFF"); }
-  else if (cmd == "log fota")  { logFlags.fota  = !logFlags.fota;  Serial.printf("[LOG] FOTA:  %s\n", logFlags.fota  ? "ON" : "OFF"); }
-  else if (cmd == "log warn")  { logFlags.warn  = !logFlags.warn;  Serial.printf("[LOG] WARN:  %s\n", logFlags.warn  ? "ON" : "OFF"); }
-  else if (cmd == "log ws")    { logFlags.ws    = !logFlags.ws;    Serial.printf("[LOG] WS:    %s\n", logFlags.ws    ? "ON" : "OFF"); }
-  else if (cmd == "log net")   { logFlags.net   = !logFlags.net;   Serial.printf("[LOG] NET:   %s\n", logFlags.net   ? "ON" : "OFF"); }
-  else if (cmd == "log http")  { logFlags.http  = !logFlags.http;  Serial.printf("[LOG] HTTP:  %s\n", logFlags.http  ? "ON" : "OFF"); }
-  else if (cmd == "log servo") { logFlags.servo = !logFlags.servo; Serial.printf("[LOG] SERVO: %s\n", logFlags.servo ? "ON" : "OFF"); }
-  else if (cmd == "log off")   { logFlags = {false, false, false, false, false, false, false, false}; Serial.println("[LOG] Alle Loop-Logs AUS"); }
-  else if (cmd == "log on")    { logFlags = {true, true, true, true, true, true, true, true};         Serial.println("[LOG] Alle Loop-Logs AN"); }
+  else if (cmd == "log adc")   { logFlags.adc   = !logFlags.adc;   console.printf("[LOG] ADC:   %s\n", logFlags.adc   ? "ON" : "OFF"); }
+  else if (cmd == "log drv")   { logFlags.drv   = !logFlags.drv;   console.printf("[LOG] DRV:   %s\n", logFlags.drv   ? "ON" : "OFF"); }
+  else if (cmd == "log fota")  { logFlags.fota  = !logFlags.fota;  console.printf("[LOG] FOTA:  %s\n", logFlags.fota  ? "ON" : "OFF"); }
+  else if (cmd == "log warn")  { logFlags.warn  = !logFlags.warn;  console.printf("[LOG] WARN:  %s\n", logFlags.warn  ? "ON" : "OFF"); }
+  else if (cmd == "log ws")    { logFlags.ws    = !logFlags.ws;    console.printf("[LOG] WS:    %s\n", logFlags.ws    ? "ON" : "OFF"); }
+  else if (cmd == "log net")   { logFlags.net   = !logFlags.net;   console.printf("[LOG] NET:   %s\n", logFlags.net   ? "ON" : "OFF"); }
+  else if (cmd == "log http")  { logFlags.http  = !logFlags.http;  console.printf("[LOG] HTTP:  %s\n", logFlags.http  ? "ON" : "OFF"); }
+  else if (cmd == "log servo") { logFlags.servo = !logFlags.servo; console.printf("[LOG] SERVO: %s\n", logFlags.servo ? "ON" : "OFF"); }
+  else if (cmd == "log off")   { logFlags = {false, false, false, false, false, false, false, false}; console.println("[LOG] Alle Loop-Logs AUS"); }
+  else if (cmd == "log on")    { logFlags = {true, true, true, true, true, true, true, true};          console.println("[LOG] Alle Loop-Logs AN"); }
   else if (cmd == "reboot") {
-    Serial.println("[CMD] Reboot...");
+    console.println("[CMD] Reboot...");
     delay(200);
     ESP.restart();
   }
   else if (cmd == "ota") {
-    Serial.println("[CMD] OTA Check gestartet...");
+    console.println("[CMD] OTA Check gestartet...");
     rc_ota_loop();
   }
   else if (cmd == "portal") {
-    Serial.println("[CMD] Config-Portal wird gestartet...");
+    console.println("[CMD] Config-Portal wird gestartet...");
     rc_start_portal();
+  }
+  else if (cmd == "panel") {
+    if (rc_start_panel_sta())
+      console.println("[CMD] Config-Panel im STA-Modus aktiv");
+    else
+      console.println("[CMD] Config-Panel konnte nicht gestartet werden (WiFi verbunden?)");
   }
   else if (cmd == "motor off") {
     rc_motor_apply_phase(2);
-    Serial.println("[CMD] Motor aus");
+    console.println("[CMD] Motor aus");
   }
   else if (cmd == "motor a") {
     rc_motor_apply_phase(0);
-    Serial.println("[CMD] Motor Phase A aktiv");
+    console.println("[CMD] Motor Phase A aktiv");
   }
   else if (cmd == "motor b") {
     rc_motor_apply_phase(1);
-    Serial.println("[CMD] Motor Phase B aktiv");
+    console.println("[CMD] Motor Phase B aktiv");
   }
   else {
-    Serial.printf("[CMD] Unbekannt: '%s' — 'help' fuer Hilfe\n", cmd.c_str());
+    console.printf("[CMD] Unbekannt: '%s' — 'help' fuer Hilfe\n", cmd.c_str());
   }
 }
 
@@ -191,7 +200,7 @@ void rc_serial_loop() {
     if (c == '\n' || c == '\r') {
       inputBuffer.trim();
       if (inputBuffer.length() > 0) {
-        handleCommand(inputBuffer);
+        rc_handle_command(inputBuffer);
         inputBuffer = "";
       }
     } else {

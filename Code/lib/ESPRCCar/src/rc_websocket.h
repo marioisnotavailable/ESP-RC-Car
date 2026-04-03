@@ -17,3 +17,4 @@ void rc_websocket_begin();
 void rc_websocket_loop();
 void rc_websocket_broadcast_batt();
 void rc_websocket_failsafe_check();
+void rc_websocket_terminal_broadcast(const uint8_t* buf, size_t size);

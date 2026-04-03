@@ -16,5 +16,8 @@ struct LogFlags {
 
 extern LogFlags logFlags;
 
+// Process a command string (used by Serial and Web terminal)
+void rc_handle_command(const String& cmd);
+
 // Serial command handler — call in loop()
 void rc_serial_loop();

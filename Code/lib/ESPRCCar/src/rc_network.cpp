@@ -2,6 +2,9 @@
 #include "rc_settings.h"
 #include "rc_httpapi.h"
 #include "rc_serial.h"
+#include "rc_console.h"
+#include <time.h>
+#include <esp_sntp.h>
 
 std::vector<WifiNet> savedNets;
 std::vector<ScanNet> lastScan;
@@ -49,7 +52,7 @@ void rc_network_load() {
   prefs.end();
 
   if (logFlags.net)
-    Serial.printf("[NET] NVS geladen, raw len=%d\n", (int)raw.length());
+    console.printf("[NET] NVS geladen, raw len=%d\n", (int)raw.length());
 
   if (raw.length() == 0) return;
 
@@ -67,11 +70,13 @@ void rc_network_load() {
     String rest = line.substring(sep + 1);
     memset(n.bssid, 0, 6);
     n.channel = 0;
+    n.lastConnected = 0;
 
     int sep2 = rest.indexOf('\t');
     if (sep2 >= 0) {
       n.pass = rest.substring(0, sep2);
       String meta = rest.substring(sep2 + 1);
+      // Fields: bssid \t channel \t lastConnected
       int sep3 = meta.indexOf('\t');
       if (sep3 >= 0) {
         String bStr = meta.substring(0, sep3);
@@ -79,7 +84,14 @@ void rc_network_load() {
           for (int b = 0; b < 6; b++)
             n.bssid[b] = (uint8_t)strtol(bStr.c_str() + b * 3, NULL, 16);
         }
-        n.channel = meta.substring(sep3 + 1).toInt();
+        String after = meta.substring(sep3 + 1);
+        int sep4 = after.indexOf('\t');
+        if (sep4 >= 0) {
+          n.channel = after.substring(0, sep4).toInt();
+          n.lastConnected = (uint32_t)strtoul(after.substring(sep4 + 1).c_str(), NULL, 10);
+        } else {
+          n.channel = after.toInt();
+        }
       }
     } else {
       n.pass = rest;
@@ -88,7 +100,7 @@ void rc_network_load() {
   }
 
   if (logFlags.net)
-    Serial.printf("[NET] %d Netzwerk(e) geladen\n", (int)savedNets.size());
+    console.printf("[NET] %d Netzwerk(e) geladen\n", (int)savedNets.size());
 }
 
 void rc_network_save() {
@@ -97,11 +109,12 @@ void rc_network_save() {
     String s = n.ssid; s.replace('\t', ' '); s.replace('\n', ' ');
     String p = n.pass; p.replace('\t', ' '); p.replace('\n', ' ');
     out += s; out += '\t'; out += p;
-    if (hasCachedBssid(n)) {
+    if (hasCachedBssid(n) || n.lastConnected > 0) {
       char bStr[18];
       snprintf(bStr, sizeof(bStr), "%02X:%02X:%02X:%02X:%02X:%02X",
         n.bssid[0], n.bssid[1], n.bssid[2], n.bssid[3], n.bssid[4], n.bssid[5]);
       out += '\t'; out += bStr; out += '\t'; out += String(n.channel);
+      out += '\t'; out += String(n.lastConnected);
     }
     out += '\n';
   }
@@ -109,7 +122,7 @@ void rc_network_save() {
   prefs.putString("nets", out);
   prefs.end();
   if (logFlags.net)
-    Serial.printf("[NET] %d Netzwerk(e) gespeichert (%d bytes)\n", (int)savedNets.size(), (int)out.length());
+    console.printf("[NET] %d Netzwerk(e) gespeichert (%d bytes)\n", (int)savedNets.size(), (int)out.length());
 }
 
 bool rc_network_add(const String& ssid, const String& pass) {
@@ -118,25 +131,25 @@ bool rc_network_add(const String& ssid, const String& pass) {
     if (n.ssid == ssid) {
       n.pass = pass;
       rc_network_save();
-      if (logFlags.net) Serial.printf("[NET] Netzwerk aktualisiert: \"%s\"\n", ssid.c_str());
+      if (logFlags.net) console.printf("[NET] Netzwerk aktualisiert: \"%s\"\n", ssid.c_str());
       return true;
     }
   if (savedNets.size() >= 16) {
-    if (logFlags.net) Serial.println("[NET] Max 16 Netzwerke erreicht");
+    if (logFlags.net) console.println("[NET] Max 16 Netzwerke erreicht");
     return false;
   }
   WifiNet nw;
   nw.ssid = ssid; nw.pass = pass;
-  memset(nw.bssid, 0, 6); nw.channel = 0;
+  memset(nw.bssid, 0, 6); nw.channel = 0; nw.lastConnected = 0;
   savedNets.push_back(nw);
   rc_network_save();
-  if (logFlags.net) Serial.printf("[NET] Netzwerk hinzugefuegt: \"%s\" (#%d)\n", ssid.c_str(), (int)savedNets.size());
+  if (logFlags.net) console.printf("[NET] Netzwerk hinzugefuegt: \"%s\" (#%d)\n", ssid.c_str(), (int)savedNets.size());
   return true;
 }
 
 bool rc_network_delete(int idx) {
   if (idx < 0 || (size_t)idx >= savedNets.size()) return false;
-  if (logFlags.net) Serial.printf("[NET] Netzwerk geloescht: \"%s\" (idx=%d)\n", savedNets[idx].ssid.c_str(), idx);
+  if (logFlags.net) console.printf("[NET] Netzwerk geloescht: \"%s\" (idx=%d)\n", savedNets[idx].ssid.c_str(), idx);
   savedNets.erase(savedNets.begin() + idx);
   rc_network_save();
   return true;
@@ -145,7 +158,8 @@ bool rc_network_delete(int idx) {
 // ---- WiFi scan ----
 void rc_wifi_scan() {
   lastScan.clear();
-  if (logFlags.net) Serial.println("[NET] WiFi-Scan gestartet...");
+  if (logFlags.net) console.println("[NET] WiFi-Scan gestartet...");
+  WiFi.setSleep(true);
   WiFi.mode(WIFI_AP_STA);
   int n = WiFi.scanNetworks(false, true, true, SCAN_DWELL_MS);
   for (int i = 0; i < n; ++i) {
@@ -153,38 +167,38 @@ void rc_wifi_scan() {
     lastScan.push_back(s);
   }
   WiFi.scanDelete();
-  Serial.printf("[NET] Scan: %d Netzwerk(e) gefunden\n", (int)lastScan.size());
+  console.printf("[NET] Scan: %d Netzwerk(e) gefunden\n", (int)lastScan.size());
 }
 
 // ---- WiFi connect ----
 bool rc_wifi_connect() {
   if (startConfigPortal || savedNets.empty()) {
     if (logFlags.net)
-      Serial.printf("[NET] WiFi connect uebersprungen (portal=%d, nets=%d)\n",
+      console.printf("[NET] WiFi connect uebersprungen (portal=%d, nets=%d)\n",
         startConfigPortal, (int)savedNets.size());
     return false;
   }
 
   WiFi.persistent(false);
-  WiFi.setSleep(false);
+  WiFi.setSleep(true);
   WiFi.mode(WIFI_STA);
   rc_apply_wifi_tx_power();
 
   if (logFlags.net)
-    Serial.printf("[NET] WiFi STA Modus, TX Power Level=%d, %d Netzwerk(e) gespeichert\n",
+    console.printf("[NET] WiFi STA Modus, TX Power Level=%d, %d Netzwerk(e) gespeichert\n",
       settings.wifiTxPower, (int)savedNets.size());
 
   auto tryConnect = [&](size_t i, uint32_t timeoutMs, bool useCached) -> bool {
     WiFi.disconnect(true);
     delay(100);
     if (useCached && hasCachedBssid(savedNets[i])) {
-      Serial.printf("[NET] [%u/%u] Fast connect \"%s\" (ch=%d) ...\n",
+      console.printf("[NET] [%u/%u] Fast connect \"%s\" (ch=%d) ...\n",
         (unsigned)(i+1), (unsigned)savedNets.size(),
         savedNets[i].ssid.c_str(), (int)savedNets[i].channel);
       WiFi.begin(savedNets[i].ssid.c_str(), savedNets[i].pass.c_str(),
         savedNets[i].channel, savedNets[i].bssid);
     } else {
-      Serial.printf("[NET] [%u/%u] Trying \"%s\" (pass len=%u) ...\n",
+      console.printf("[NET] [%u/%u] Trying \"%s\" (pass len=%u) ...\n",
         (unsigned)(i+1), (unsigned)savedNets.size(),
         savedNets[i].ssid.c_str(), (unsigned)savedNets[i].pass.length());
       WiFi.begin(savedNets[i].ssid.c_str(), savedNets[i].pass.c_str());
@@ -193,7 +207,7 @@ bool rc_wifi_connect() {
     while (millis() - t0 < timeoutMs) {
       wl_status_t status = WiFi.status();
       if (status == WL_CONNECTED) {
-        Serial.printf("[NET] Connected to \"%s\" (RSSI: %d, ch=%d) after %lums\n",
+        console.printf("[NET] Connected to \"%s\" (RSSI: %d, ch=%d) after %lums\n",
           WiFi.SSID().c_str(), WiFi.RSSI(), WiFi.channel(), millis() - t0);
         return true;
       }
@@ -201,40 +215,40 @@ bool rc_wifi_connect() {
         const char* reason = (status == WL_CONNECT_FAILED)
           ? "FAILED - wrong password or auth rejected"
           : "NO_SSID - network not found (out of range or 5GHz only)";
-        Serial.printf("[NET] \"%s\": %s | %lums\n", savedNets[i].ssid.c_str(), reason, millis() - t0);
+        console.printf("[NET] \"%s\": %s | %lums\n", savedNets[i].ssid.c_str(), reason, millis() - t0);
         return false;
       }
       if (logFlags.net && ((millis() - t0) % 1000 < WIFI_CONNECT_POLL_MS))
-        Serial.printf("[NET] \"%s\": waiting... status=%d %lums\n",
+        console.printf("[NET] \"%s\": waiting... status=%d %lums\n",
           savedNets[i].ssid.c_str(), (int)status, millis() - t0);
       delay(WIFI_CONNECT_POLL_MS);
     }
-    Serial.printf("[NET] \"%s\": timeout after %lums\n", savedNets[i].ssid.c_str(), timeoutMs);
+    console.printf("[NET] \"%s\": timeout after %lums\n", savedNets[i].ssid.c_str(), timeoutMs);
     return false;
   };
 
   bool connected = false;
+  uint32_t perNet = WIFI_CONNECT_TOTAL_MS / savedNets.size();
+  if (logFlags.net) {
+    console.println("[NET] Connect-Strategie: pro WLAN zuerst Fast-Connect, dann Normal-Connect");
+    console.printf("[NET] Normal-Timeout pro Netzwerk: %lums\n", (unsigned long)perNet);
+  }
 
-  // Phase 1: Fast connect with cached BSSID/channel
-  if (logFlags.net) Serial.println("[NET] Phase 1: Fast connect (cached BSSID)...");
+  // Per Netzwerk: erst Fast-Connect (wenn BSSID gecached), dann direkt normaler Fallback.
   for (size_t i = 0; i < savedNets.size() && !connected; ++i) {
-    if (hasCachedBssid(savedNets[i]))
+    if (hasCachedBssid(savedNets[i])) {
       connected = tryConnect(i, 5000, true);
-  }
-
-  // Phase 2: Normal connect
-  if (!connected) {
-    Serial.println("[NET] Phase 2: Normal scan connect...");
-    uint32_t perNet = WIFI_CONNECT_TOTAL_MS / savedNets.size();
-    if (logFlags.net)
-      Serial.printf("[NET] %lums pro Netzwerk\n", (unsigned long)perNet);
-    for (size_t i = 0; i < savedNets.size() && !connected; ++i) {
-      connected = tryConnect(i, perNet, false);
+      if (connected) break;
     }
+    connected = tryConnect(i, perNet, false);
   }
 
-  // Cache BSSID/channel on success
+  // Cache BSSID/channel on success + start NTP
   if (connected) {
+    // Start NTP time sync
+    configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+    if (logFlags.net) console.println("[NET] NTP time sync gestartet");
+
     String connSsid = WiFi.SSID();
     uint8_t* bssid  = WiFi.BSSID();
     int32_t ch      = WiFi.channel();
@@ -244,14 +258,14 @@ bool rc_wifi_connect() {
         n.channel = ch;
         rc_network_save();
         if (logFlags.net)
-          Serial.printf("[NET] Cached BSSID=%02X:%02X:%02X:%02X:%02X:%02X ch=%d for \"%s\"\n",
+          console.printf("[NET] Cached BSSID=%02X:%02X:%02X:%02X:%02X:%02X ch=%d for \"%s\"\n",
             bssid[0], bssid[1], bssid[2], bssid[3], bssid[4], bssid[5], ch, connSsid.c_str());
         break;
       }
     }
   }
 
-  if (!connected) Serial.println("[NET] Alle Netzwerke fehlgeschlagen");
+  if (!connected) console.println("[NET] Alle Netzwerke fehlgeschlagen");
   return connected;
 }
 
@@ -259,13 +273,69 @@ bool rc_wifi_connect() {
 bool rc_wifi_setup() {
   bool connected = rc_wifi_connect();
   if (connected) {
-    Serial.printf("[NET] Verbunden. IP=%s RSSI=%d Gateway=%s\n",
+    console.printf("[NET] Verbunden. IP=%s RSSI=%d Gateway=%s\n",
       WiFi.localIP().toString().c_str(), WiFi.RSSI(), WiFi.gatewayIP().toString().c_str());
   } else {
-    Serial.println("[NET] Starte Config-Portal...");
+    console.println("[NET] Starte Config-Portal...");
     rc_start_portal();
   }
   return connected;
+}
+
+// ---- NTP timestamp per connection ----
+static wl_status_t lastWiFiStatus = WL_IDLE_STATUS;
+static bool pendingConnStamp = false;
+static String pendingConnSsid;
+static uint32_t pendingConnNextLogMs = 0;
+
+void rc_ntp_stamp_loop() {
+  wl_status_t status = WiFi.status();
+  if (status != WL_CONNECTED) {
+    lastWiFiStatus = status;
+    pendingConnStamp = false;
+    pendingConnSsid = "";
+    return;
+  }
+
+  String connSsid = WiFi.SSID();
+  if (connSsid.length() == 0) return;
+
+  // Detect new or changed connection and queue one timestamp update.
+  if (lastWiFiStatus != WL_CONNECTED || pendingConnSsid != connSsid) {
+    pendingConnStamp = true;
+    pendingConnSsid = connSsid;
+    pendingConnNextLogMs = millis() + 15000;
+    if (logFlags.net)
+      console.printf("[NET] Connection detected for \"%s\" — waiting for NTP sync...\n", connSsid.c_str());
+  }
+  lastWiFiStatus = status;
+
+  if (!pendingConnStamp) return;
+
+  time_t now = time(nullptr);
+  bool ntpSynced = (sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED);
+  if (now < 1700000000) {
+    if (logFlags.net && millis() >= pendingConnNextLogMs) {
+      console.printf("[NET] Waiting for valid time on \"%s\" (now=%ld, sync=%d)\n",
+        connSsid.c_str(), (long)now, (int)ntpSynced);
+      pendingConnNextLogMs = millis() + 15000;
+    }
+    return;  // no usable clock yet
+  }
+
+  for (auto& n : savedNets) {
+    if (n.ssid == connSsid) {
+      n.lastConnected = (uint32_t)now;
+      pendingConnStamp = false;
+      rc_network_save();
+      if (logFlags.net)
+        console.printf("[NET] Timestamp %lu saved for \"%s\" (sync=%d)\n",
+          (unsigned long)now, connSsid.c_str(), (int)ntpSynced);
+      return;
+    }
+  }
+
+  pendingConnStamp = false;
 }
 
 // ---- Multi-Reset Detection ----
@@ -275,14 +345,14 @@ void rc_mrd_check_boot() {
   cnt++;
   prefsMRD.putUChar("cnt", cnt);
   prefsMRD.end();
-  Serial.printf("[MRD] boot count = %u / %u\n", (unsigned)cnt, (unsigned)MRD_REQUIRED);
+  console.printf("[MRD] boot count = %u / %u\n", (unsigned)cnt, (unsigned)MRD_REQUIRED);
   mrdClearAtMs = millis() + MRD_TIMEOUT_MS;
   if (cnt >= MRD_REQUIRED) {
     startConfigPortal = true;
     prefsMRD.begin("mrd", false);
     prefsMRD.putUChar("cnt", 0);
     prefsMRD.end();
-    Serial.println("[MRD] threshold reached -> starting config portal");
+    console.println("[MRD] threshold reached -> starting config portal");
   }
 }
 
@@ -292,7 +362,7 @@ void rc_mrd_loop() {
     prefsMRD.putUChar("cnt", 0);
     prefsMRD.end();
     mrdCleared = true;
-    if (logFlags.net) Serial.println("[MRD] window expired; counter cleared (NVS)");
+    if (logFlags.net) console.println("[MRD] window expired; counter cleared (NVS)");
   }
 }
 
@@ -300,7 +370,7 @@ void rc_mrd_loop() {
 void rc_udp_begin() {
   udp.begin(DISCOVERY_PORT);
   if (logFlags.net)
-    Serial.printf("[NET] UDP Discovery auf Port %d gestartet\n", DISCOVERY_PORT);
+    console.printf("[NET] UDP Discovery auf Port %d gestartet\n", DISCOVERY_PORT);
 }
 
 void rc_udp_loop() {
@@ -318,11 +388,11 @@ void rc_udp_loop() {
       udp.write((const uint8_t*)msg, strlen(msg));
       udp.endPacket();
       if (logFlags.net)
-        Serial.printf("[NET] Discovery Query von %s:%d -> %s\n",
+        console.printf("[NET] Discovery Query von %s:%d -> %s\n",
           udp.remoteIP().toString().c_str(), udp.remotePort(), msg);
     } else {
       if (logFlags.net)
-        Serial.printf("[NET] UDP unbekannt (%d bytes): '%s'\n", packetSize, buf);
+        console.printf("[NET] UDP unbekannt (%d bytes): '%s'\n", packetSize, buf);
     }
   }
 
@@ -340,6 +410,6 @@ void rc_udp_loop() {
     udp.write((const uint8_t*)msg, strlen(msg));
     udp.endPacket();
     if (logFlags.net)
-      Serial.printf("[NET] Beacon -> %s + 255.255.255.255\n", bcast.toString().c_str());
+      console.printf("[NET] Beacon -> %s + 255.255.255.255\n", bcast.toString().c_str());
   }
 }

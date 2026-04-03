@@ -21,10 +21,11 @@
 #define MRD_REQUIRED           3
 
 struct WifiNet {
-  String  ssid;
-  String  pass;
-  uint8_t bssid[6];
-  int32_t channel;
+  String   ssid;
+  String   pass;
+  uint8_t  bssid[6];
+  int32_t  channel;
+  uint32_t lastConnected;  // epoch seconds (0 = never)
 };
 
 struct ScanNet {
@@ -59,6 +60,9 @@ void rc_mrd_loop();
 // UDP Discovery
 void rc_udp_begin();
 void rc_udp_loop();
+
+// NTP timestamp (call in loop — one-shot after NTP sync)
+void rc_ntp_stamp_loop();
 
 // Helpers
 IPAddress rc_current_ip();

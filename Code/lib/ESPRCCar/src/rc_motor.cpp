@@ -1,5 +1,6 @@
 #include "rc_motor.h"
 #include "rc_serial.h"
+#include "rc_console.h"
 #include "rc_pins.h"
 
 DRV8323 drv(PIN_DRV_CS, PIN_DRV_EN, PIN_DRV_FAULT,
@@ -25,30 +26,30 @@ void rc_motor_apply_phase(int phase) {
     ledcWrite(CH_PWM_A, PWM_DUTY);
     ledcWrite(CH_PWM_B, 0);
     if (logFlags.drv)
-      Serial.printf("[DRV] Motor DIAG: Phase A active (PIN_INHA=%d, CH=%d duty=%d)\n",
+      console.printf("[DRV] Motor DIAG: Phase A active (PIN_INHA=%d, CH=%d duty=%d)\n",
                     PIN_INHA, CH_PWM_A, PWM_DUTY);
   } else if (phase == 1) {
     ledcWrite(CH_PWM_A, 0);
     ledcWrite(CH_PWM_B, PWM_DUTY);
     if (logFlags.drv)
-      Serial.printf("[DRV] Motor DIAG: Phase B active (PIN_INHB=%d, CH=%d duty=%d)\n",
+      console.printf("[DRV] Motor DIAG: Phase B active (PIN_INHB=%d, CH=%d duty=%d)\n",
                     PIN_INHB, CH_PWM_B, PWM_DUTY);
   } else {
-    if (logFlags.drv) Serial.println("[DRV] Motor DIAG: All off");
+    if (logFlags.drv) console.println("[DRV] Motor DIAG: All off");
   }
 }
 
 void rc_motor_setup() {
-  Serial.println("[DRV] Initializing DRV8323S...");
+  console.println("[DRV] Initializing DRV8323S...");
   drv.begin();
 
   drv.writeRegister(0x2, 0x080);
-  Serial.printf("[DRV] DRV_CTRL (0x2) set to 0x%03X\n", drv.readRegister(0x2));
+  console.printf("[DRV] DRV_CTRL (0x2) set to 0x%03X\n", drv.readRegister(0x2));
 
-  Serial.println("[DRV] Register dump (0x0-0x6):");
+  console.println("[DRV] Register dump (0x0-0x6):");
   for (uint8_t reg = 0; reg <= 6; ++reg) {
     uint16_t val = drv.readRegister(reg);
-    Serial.printf("[DRV] Reg 0x%X = 0x%03X\n", reg, val);
+    console.printf("[DRV] Reg 0x%X = 0x%03X\n", reg, val);
   }
 
   pinMode(PIN_INHA, OUTPUT); digitalWrite(PIN_INHA, LOW);
@@ -63,7 +64,7 @@ void rc_motor_setup() {
   ledcAttachPin(PIN_INHA, CH_PWM_A);
   ledcAttachPin(PIN_INHB, CH_PWM_B);
 
-  Serial.printf("[DRV] LEDC Setup A: %s, B: %s | Attached A->CH%d, B->CH%d at %u Hz\n",
+  console.printf("[DRV] LEDC Setup A: %s, B: %s | Attached A->CH%d, B->CH%d at %u Hz\n",
     setup_a ? "OK" : "FAIL", setup_b ? "OK" : "FAIL",
     CH_PWM_A, CH_PWM_B, PWM_FREQ);
 
@@ -82,7 +83,7 @@ void rc_motor_loop() {
     rc_motor_apply_phase(motorTestPhase);
     nextMotorDirSwitchMs = now + MOTOR_DIR_SWITCH_MS;
     if (logFlags.drv)
-      Serial.printf("[DRV] Next test phase in %lu ms\n", (unsigned long)MOTOR_DIR_SWITCH_MS);
+      console.printf("[DRV] Next test phase in %lu ms\n", (unsigned long)MOTOR_DIR_SWITCH_MS);
   }
 }
 
@@ -91,7 +92,7 @@ void rc_motor_fault_check() {
     uint16_t f1 = drv.readFault1();
     uint16_t f2 = drv.readFault2();
     if (logFlags.drv)
-      Serial.printf("[DRV] Fault1: 0x%03X | Fault2: 0x%03X | nFAULT: LOW (Fault detected)\n", f1, f2);
+      console.printf("[DRV] Fault1: 0x%03X | Fault2: 0x%03X | nFAULT: LOW (Fault detected)\n", f1, f2);
     drv.clearFaults();
   }
 }

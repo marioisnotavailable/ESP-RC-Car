@@ -1,6 +1,7 @@
 #include "rc_battery.h"
 #include "rc_settings.h"
 #include "rc_serial.h"
+#include "rc_console.h"
 #include "rc_pins.h"
 #include "driver/gpio.h"
 #include <driver/adc.h>
@@ -27,17 +28,17 @@ static void adc_cali_init() {
     ADC_UNIT_1, ADC_ATTEN_DB_11, ADC_WIDTH_BIT_12, 1100, &adc_chars);
 
   if (cal_type == ESP_ADC_CAL_VAL_EFUSE_VREF)
-    Serial.println("[CAL] eFuse Vref Kalibrierung OK");
+    console.println("[CAL] eFuse Vref Kalibrierung OK");
   else if (cal_type == ESP_ADC_CAL_VAL_EFUSE_TP)
-    Serial.println("[CAL] eFuse Two Point Kalibrierung OK");
+    console.println("[CAL] eFuse Two Point Kalibrierung OK");
   else
-    Serial.println("[CAL] Keine eFuse – Default Vref 1100mV");
+    console.println("[CAL] Keine eFuse – Default Vref 1100mV");
 
   cali_ok = true;
 }
 
 void rc_battery_setup() {
-  Serial.println("[BOOT] Batteriemonitor gestartet");
+  console.println("[BOOT] Batteriemonitor gestartet");
 
   gpio_config_t io_conf = {};
   io_conf.intr_type     = GPIO_INTR_DISABLE;
@@ -65,7 +66,7 @@ void rc_battery_loop() {
   lastEval = millis();
 
   if (sampleCount == 0) {
-    Serial.println("[ERR] Keine Samples");
+    console.println("[ERR] Keine Samples");
     return;
   }
 
@@ -79,7 +80,7 @@ void rc_battery_loop() {
   vAdc_last         = vAdc;
 
   if (logFlags.adc)
-    Serial.printf("[ADC] V_ADC: %.3fV (%s) | V_Batt: %.2fV (vBatt=%d) | Samples: %d\n",
+    console.printf("[ADC] V_ADC: %.3fV (%s) | V_Batt: %.2fV (vBatt=%d) | Samples: %d\n",
                   vAdc, cali_ok ? "kalibriert" : "unkalibriert", vBatt, batteryPercent, sampleCount);
 
   mvAccum     = 0;
@@ -88,15 +89,15 @@ void rc_battery_loop() {
   if (vBatt <= settings.battOffV) {
     lowVoltageHits++;
     if (logFlags.warn)
-      Serial.printf("[WARN] Unterspannung %d/%d\n", lowVoltageHits, LOW_CONFIRM_COUNT);
+      console.printf("[WARN] Unterspannung %d/%d\n", lowVoltageHits, LOW_CONFIRM_COUNT);
   } else {
     lowVoltageHits = 0;
     if (vBatt <= settings.battWarnV && logFlags.warn)
-      Serial.println("[WARN] Batterie niedrig!");
+      console.println("[WARN] Batterie niedrig!");
   }
 
   if (lowVoltageHits >= LOW_CONFIRM_COUNT) {
-    Serial.println("[SLEEP] Batterie zu niedrig – Deep Sleep");
+    console.println("[SLEEP] Batterie zu niedrig – Deep Sleep");
     esp_sleep_enable_timer_wakeup(4000000ULL);
     esp_deep_sleep_start();
   }

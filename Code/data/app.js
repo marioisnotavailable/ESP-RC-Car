@@ -1,5 +1,5 @@
 async function apiGetSaved() {
-  const r = await fetch('/api/saved');
+  const r = await fetch('/api/saved', { cache: 'no-store' });
   return r.json();
 }
 async function apiSave(ssid, pass) {
@@ -24,14 +24,25 @@ async function apiScan() {
 async function apiReboot() {
   await fetch('/api/reboot', { method: 'POST' });
 }
+async function apiGetAdc() {
+  const r = await fetch('/api/adc', { cache: 'no-store' });
+  return r.json();
+}
 async function apiGetSettings() {
-  const r = await fetch('/api/settings');
+  const r = await fetch('/api/settings', { cache: 'no-store' });
   return r.json();
 }
 async function apiSaveSettings(data) {
   const body = new URLSearchParams(data);
   const r = await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
   return r.json();
+}
+
+function fmtLastConn(epoch) {
+  if (!epoch || epoch === 0) return 'Never';
+  const d = new Date(epoch * 1000);
+  const pad = n => String(n).padStart(2, '0');
+  return `${pad(d.getDate())}.${pad(d.getMonth()+1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function renderSaved(list) {
@@ -41,7 +52,8 @@ function renderSaved(list) {
     const tr = document.createElement('tr');
     const upBtn = idx > 0 ? `<button data-up="${it.i}">&#9650;</button>` : '';
     const dnBtn = idx < list.length - 1 ? `<button data-dn="${it.i}">&#9660;</button>` : '';
-    tr.innerHTML = `<td>${it.i}</td><td>${it.ssid}</td><td>${upBtn}${dnBtn}</td><td><button data-del="${it.i}">Delete</button></td>`;
+    const lastConn = fmtLastConn(it.lastConn);
+    tr.innerHTML = `<td>${it.i}</td><td>${it.ssid}</td><td class="ts">${lastConn}</td><td>${upBtn}${dnBtn}</td><td><button data-del="${it.i}">Delete</button></td>`;
     tb.appendChild(tr);
   });
 }
@@ -63,35 +75,142 @@ async function refreshAll() {
   } catch (e) { console.error(e); }
 }
 
-// WebSocket for ADC monitoring
-let ws; 
+async function refreshAdcMonitor() {
+  try {
+    const adc = await apiGetAdc();
+    const vAdc = Number(adc.vAdc);
+    const vBatt = Number(adc.vBatt);
+    const percent = Number(adc.percent);
+
+    const adcVAdcEl = document.getElementById('adc-vAdc');
+    const adcVBattEl = document.getElementById('adc-vBatt');
+    const cfgVBattEl = document.getElementById('cfg-vBatt');
+    const cfgBattPercentEl = document.getElementById('cfg-battPercent');
+
+    if (adcVAdcEl && Number.isFinite(vAdc)) adcVAdcEl.textContent = vAdc.toFixed(3);
+    if (adcVBattEl && Number.isFinite(vBatt)) adcVBattEl.textContent = vBatt.toFixed(2);
+    if (cfgVBattEl && Number.isFinite(vBatt)) cfgVBattEl.textContent = vBatt.toFixed(2);
+    if (cfgBattPercentEl && Number.isFinite(percent)) cfgBattPercentEl.textContent = String(Math.round(percent));
+  } catch (e) {
+    console.error('ADC refresh failed', e);
+  }
+}
+
+const MAX_TERMINAL_CHARS = 20000;
+
+// WebSocket for battery + terminal streaming
+let ws;
+let termOutputEl = null;
+let termStateEl = null;
+let terminalCardEl = null;
+let termFullscreenBtn = null;
+
+function setTerminalFullscreenUi(active) {
+  if (!termFullscreenBtn) return;
+  termFullscreenBtn.textContent = active ? 'Exit Full Screen' : 'Full Screen';
+}
+
+function isTerminalFallbackFullscreen() {
+  return !!(terminalCardEl && terminalCardEl.classList.contains('is-fullscreen'));
+}
+
+function isTerminalFullscreen() {
+  if (terminalCardEl && document.fullscreenElement) {
+    return document.fullscreenElement === terminalCardEl;
+  }
+  return isTerminalFallbackFullscreen();
+}
+
+async function toggleTerminalFullscreen() {
+  if (!terminalCardEl) return;
+
+  try {
+    if (document.fullscreenEnabled && terminalCardEl.requestFullscreen) {
+      if (document.fullscreenElement === terminalCardEl) {
+        await document.exitFullscreen();
+      } else {
+        await terminalCardEl.requestFullscreen();
+      }
+      setTerminalFullscreenUi(isTerminalFullscreen());
+      return;
+    }
+  } catch (e) {
+    console.warn('Fullscreen API failed, fallback mode used', e);
+  }
+
+  terminalCardEl.classList.toggle('is-fullscreen');
+  document.body.classList.toggle('no-scroll', isTerminalFallbackFullscreen());
+  setTerminalFullscreenUi(isTerminalFullscreen());
+}
+
+function appendTerminal(text) {
+  if (!termOutputEl || !text) return;
+  const stickToBottom = termOutputEl.scrollTop + termOutputEl.clientHeight >= termOutputEl.scrollHeight - 8;
+  termOutputEl.textContent += text;
+  if (termOutputEl.textContent.length > MAX_TERMINAL_CHARS) {
+    termOutputEl.textContent = termOutputEl.textContent.slice(-MAX_TERMINAL_CHARS);
+  }
+  if (stickToBottom) {
+    termOutputEl.scrollTop = termOutputEl.scrollHeight;
+  }
+}
+
+function setTerminalState(connected) {
+  if (!termStateEl) return;
+  termStateEl.textContent = connected ? 'online' : 'offline';
+  termStateEl.classList.toggle('ok', connected);
+  termStateEl.classList.toggle('bad', !connected);
+}
+
+function sendTerminalCommand(cmd) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    appendTerminal('[TERM] WebSocket not connected\n');
+    return false;
+  }
+  ws.send(`CMD:${cmd}`);
+  return true;
+}
+
 function connectWebSocket() {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsUrl = `${protocol}//${window.location.hostname}:81/`;
   ws = new WebSocket(wsUrl);
-  
+
   ws.onopen = () => {
     console.log('WebSocket connected');
+    setTerminalState(true);
+    appendTerminal('[TERM] Connected\n');
   };
-  
+
   ws.onmessage = (event) => {
     const msg = event.data;
+
+    if (typeof msg !== 'string') return;
+
     // Parse battery percentage message: "BATT:XX"
     if (msg.startsWith('BATT:')) {
-      const percent = parseInt(msg.substring(5));
+      const percent = parseInt(msg.substring(5), 10);
       if (!isNaN(percent)) {
         const el = document.getElementById('cfg-battPercent');
         if (el) el.textContent = percent;
       }
+      return;
+    }
+
+    // Terminal stream chunk
+    if (msg.startsWith('TERM:')) {
+      appendTerminal(msg.substring(5));
     }
   };
-  
+
   ws.onerror = (error) => {
     console.error('WebSocket error:', error);
   };
-  
+
   ws.onclose = () => {
     console.log('WebSocket disconnected, reconnecting in 2s...');
+    setTerminalState(false);
+    appendTerminal('[TERM] Disconnected, retrying...\n');
     setTimeout(connectWebSocket, 2000);
   };
 }
@@ -105,6 +224,15 @@ window.addEventListener('DOMContentLoaded', () => {
   const savedTable = document.getElementById('saved-table');
   const scanTable = document.getElementById('scan-table');
   const rebootForm = document.getElementById('reboot-form');
+  const termForm = document.getElementById('term-form');
+  const termInput = document.getElementById('term-input');
+  const termClear = document.getElementById('term-clear');
+  termFullscreenBtn = document.getElementById('term-fullscreen');
+  terminalCardEl = document.getElementById('terminal-card');
+  termOutputEl = document.getElementById('term-output');
+  termStateEl = document.getElementById('term-state');
+  setTerminalState(false);
+  setTerminalFullscreenUi(false);
 
   addForm.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -161,9 +289,48 @@ window.addEventListener('DOMContentLoaded', () => {
     await fetch('/api/restart-charge', { method: 'POST' });
   });
 
+  if (termForm && termInput && termClear) {
+    termForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const cmd = termInput.value.trim();
+      if (!cmd) return;
+      appendTerminal(`> ${cmd}\n`);
+      sendTerminalCommand(cmd);
+      termInput.value = '';
+      termInput.focus();
+    });
+
+    termClear.addEventListener('click', () => {
+      if (termOutputEl) termOutputEl.textContent = '';
+      termInput.focus();
+    });
+  }
+
+  if (termFullscreenBtn) {
+    termFullscreenBtn.addEventListener('click', () => {
+      toggleTerminalFullscreen();
+    });
+  }
+
+  document.addEventListener('fullscreenchange', () => {
+    if (!document.fullscreenElement && terminalCardEl) {
+      terminalCardEl.classList.remove('is-fullscreen');
+      document.body.classList.remove('no-scroll');
+    }
+    setTerminalFullscreenUi(isTerminalFullscreen());
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && isTerminalFallbackFullscreen() && !document.fullscreenElement) {
+      terminalCardEl.classList.remove('is-fullscreen');
+      document.body.classList.remove('no-scroll');
+      setTerminalFullscreenUi(false);
+    }
+  });
+
   // Settings
   const cfgIds = ['cfg-ota','cfg-otaInterval','cfg-txPower','cfg-failsafe','cfg-beacon',
-    'cfg-apPrefix','cfg-steerInvert','cfg-steerGain','cfg-steerDeadzone','cfg-steerFilter',
+    'cfg-apPrefix','cfg-alwaysPanel','cfg-steerInvert','cfg-steerGain','cfg-steerDeadzone','cfg-steerFilter',
     'cfg-battWarn','cfg-battOff','cfg-maxThrottle'];
   const cfg = {};
   cfgIds.forEach(id => cfg[id] = document.getElementById(id));
@@ -179,6 +346,7 @@ window.addEventListener('DOMContentLoaded', () => {
     cfg['cfg-failsafe'].value = String(s.failsafeMs);
     cfg['cfg-beacon'].value = String(s.beaconIntervalMs);
     cfg['cfg-apPrefix'].value = s.apPrefix;
+    cfg['cfg-alwaysPanel'].checked = !!s.alwaysStartPanel;
     cfg['cfg-steerInvert'].checked = s.steerInvert;
     cfg['cfg-steerGain'].value = s.steerGain;
     cfg['cfg-steerDeadzone'].value = s.steerDeadzone;
@@ -199,6 +367,7 @@ window.addEventListener('DOMContentLoaded', () => {
       failsafeMs: cfg['cfg-failsafe'].value,
       beaconIntervalMs: cfg['cfg-beacon'].value,
       apPrefix: cfg['cfg-apPrefix'].value,
+      alwaysStartPanel: cfg['cfg-alwaysPanel'].checked ? '1' : '0',
       steerInvert: cfg['cfg-steerInvert'].checked ? '1' : '0',
       steerGain: cfg['cfg-steerGain'].value,
       steerDeadzone: cfg['cfg-steerDeadzone'].value,
@@ -230,5 +399,8 @@ window.addEventListener('DOMContentLoaded', () => {
   });
 
   refreshAll();
-  connectWebSocket();  // Connect to WebSocket for ADC monitoring
+  setInterval(refreshAll, 15000);
+  refreshAdcMonitor();
+  setInterval(refreshAdcMonitor, 2000);
+  connectWebSocket();
 });

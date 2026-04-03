@@ -4,7 +4,7 @@ static Preferences prefsSettings;
 
 DeviceSettings settings = {
   true, FOTA_CHECK_DEFAULT_MS,                       // OTA
-  3, 400, 2000, "ESP-RC-Car-Setup-",                 // Network
+  3, 400, 2000, "ESP-RC-Car-Setup-", false,          // Network
   false, 1.0f, 30, 0.85f,                            // Steering
   7.9f, 7.4f,                                        // Battery
   100,                                                // Motor
@@ -23,6 +23,7 @@ void rc_settings_load() {
   String ap = prefsSettings.getString("apPfx", "ESP-RC-Car-Setup-");
   strncpy(settings.apPrefix, ap.c_str(), sizeof(settings.apPrefix)-1);
   settings.apPrefix[sizeof(settings.apPrefix)-1] = '\0';
+  settings.alwaysStartPanel= prefsSettings.getBool("cfgPanel", false);
   settings.steerInvert     = prefsSettings.getBool("stInv", false);
   settings.steerGain       = prefsSettings.getFloat("stGain", 1.0f);
   settings.steerDeadzone   = prefsSettings.getUShort("stDz", 30);
@@ -43,6 +44,7 @@ void rc_settings_save() {
   prefsSettings.putUShort("failMs", settings.failsafeMs);
   prefsSettings.putULong("beacInt", settings.beaconIntervalMs);
   prefsSettings.putString("apPfx", settings.apPrefix);
+  prefsSettings.putBool("cfgPanel", settings.alwaysStartPanel);
   prefsSettings.putBool("stInv", settings.steerInvert);
   prefsSettings.putFloat("stGain", settings.steerGain);
   prefsSettings.putUShort("stDz", settings.steerDeadzone);

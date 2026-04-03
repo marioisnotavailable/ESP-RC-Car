@@ -5,6 +5,7 @@
 
 #include "rc_pins.h"
 #include "rc_settings.h"
+#include "rc_console.h"
 #include "rc_battery.h"
 #include "rc_motor.h"
 #include "rc_steering.h"

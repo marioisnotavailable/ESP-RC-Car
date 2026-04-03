@@ -26,18 +26,22 @@
         <button id="scan-btn" class="right">Scan Wi‑Fi</button>
       </div>
       <div class="hint">Scanning can briefly disrupt AP; initial results were scanned at startup.</div>
-      <table id="scan-table">
-        <thead><tr><th>SSID</th><th>RSSI</th><th>Enc</th><th>Pick</th></tr></thead>
-        <tbody></tbody>
-      </table>
+      <div class="table-wrap">
+        <table id="scan-table">
+          <thead><tr><th>SSID</th><th>RSSI</th><th>Enc</th><th>Pick</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
     </section>
 
     <section class="card">
       <h3>Saved Networks</h3>
-      <table id="saved-table">
-        <thead><tr><th>#</th><th>SSID</th><th>Order</th><th>Action</th></tr></thead>
-        <tbody></tbody>
-      </table>
+      <div class="table-wrap">
+        <table id="saved-table">
+          <thead><tr><th>#</th><th>SSID</th><th>Last Connected</th><th>Order</th><th>Action</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
     </section>
 
     <section class="card">
@@ -60,6 +64,10 @@
       <div class="setting">
         <label>OTA Check Interval</label>
         <input id="cfg-otaInterval" type="number" min="1" max="1440" step="1" style="width:80px" /><span class="unit">min</span>
+      </div>
+      <div class="setting">
+        <label>Always Start Config Page</label>
+        <label class="switch"><input id="cfg-alwaysPanel" type="checkbox" /><span class="slider"></span></label>
       </div>
 
       <h4>Network</h4>
@@ -137,6 +145,23 @@
 
       <button id="cfg-save">Save Settings</button>
       <div id="cfg-msg" class="msg"></div>
+    </section>
+
+    <section class="card" id="terminal-card">
+      <div class="row">
+        <h3>Terminal</h3>
+        <div class="terminal-top-actions">
+          <button id="term-fullscreen" type="button">Full Screen</button>
+          <span id="term-state" class="state bad">offline</span>
+        </div>
+      </div>
+      <pre id="term-output" class="terminal" aria-live="polite"></pre>
+      <form id="term-form" class="terminal-form">
+        <input id="term-input" type="text" autocomplete="off" placeholder="Type command, e.g. status" />
+        <button type="submit">Send</button>
+        <button id="term-clear" type="button">Clear</button>
+      </form>
+      <div class="hint">Commands are the same as serial: help, status, settings, wifi, scan, drv, log ...</div>
     </section>
 
     <section class="card">

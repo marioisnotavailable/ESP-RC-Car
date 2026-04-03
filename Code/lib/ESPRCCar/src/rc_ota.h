@@ -1,4 +1,4 @@
-// rc_ota.h — OTA update management + GitHub Releases flashing
+// rc_ota.h — OTA update management + GitHub Releases flashing + ArduinoOTA
 #pragma once
 
 #include <Arduino.h>
@@ -7,6 +7,7 @@
 #include <WiFiClientSecure.h>
 #include <Update.h>
 #include <ArduinoJson.h>
+#include <ArduinoOTA.h>
 
 #ifndef FOTA_CURRENT_VERSION
 #define FOTA_CURRENT_VERSION "v0.0.0"

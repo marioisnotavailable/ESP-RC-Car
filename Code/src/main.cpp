@@ -9,7 +9,11 @@ void setup() {
   rc_fs_begin();                    // LittleFS mounten und Dateien auflisten
   rc_settings_load();               // Geraeteeinstellungen aus NVS laden
   rc_network_load();                // Gespeicherte WLAN-Netzwerke aus NVS laden
-  rc_ota_setup(rc_wifi_setup());    // WLAN verbinden (oder AP-Portal starten), OTA planen
+  bool wifiConnected = rc_wifi_setup(); // WLAN verbinden (oder AP-Portal starten)
+  rc_ota_setup(wifiConnected);      // OTA planen
+  if (wifiConnected && settings.alwaysStartPanel) {
+    rc_start_panel_sta();           // Config-Panel im bestehenden WLAN starten
+  }
   rc_websocket_begin();             // WebSocket-Server auf Port 81 starten
   rc_udp_begin();                   // UDP-Discovery-Service starten
   rc_battery_setup();               // ADC fuer Batteriespannung konfigurieren
@@ -20,11 +24,12 @@ void loop() {
   rc_portal_loop();                 // DNS + HTTP fuer Config-Portal verarbeiten
   rc_websocket_loop();              // WebSocket-Befehle (Throttle/Steering) empfangen
   rc_udp_loop();                    // UDP-Discovery Anfragen beantworten + Beacon senden
-  rc_ota_loop();                    // Periodisch auf Firmware-Updates pruefen
+  rc_ota_loop();                    // Periodisch auf Firmware-Updates pruefen + ArduinoOTA
   rc_battery_loop();                // ADC auslesen, Spannung berechnen, Deep-Sleep pruefen
   rc_motor_loop();                  // Motor-Diagnose: Phasen A/B/Off durchschalten
   rc_motor_fault_check();           // DRV8323S nFAULT-Pin pruefen, Fehler loggen/clearen
   rc_websocket_broadcast_batt();    // Batterieprozent an alle WS-Clients senden
   rc_websocket_failsafe_check();    // Lenkung auf 0 setzen wenn kein Befehl kommt
+  rc_ntp_stamp_loop();              // NTP-Zeitstempel fuer verbundenes Netzwerk setzen
   rc_serial_loop();                 // Serial-Befehle verarbeiten (help, status, ...)
 }

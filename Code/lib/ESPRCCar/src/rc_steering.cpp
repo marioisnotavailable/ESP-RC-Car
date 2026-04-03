@@ -1,6 +1,7 @@
 #include "rc_steering.h"
 #include "rc_settings.h"
 #include "rc_serial.h"
+#include "rc_console.h"
 #include "rc_pins.h"
 #include "driver/gpio.h"
 
@@ -53,19 +54,19 @@ void rc_steering_init_fallback() {
   targetUs_timer = SERVO_MID_US;
   timerAlarmWrite(servoTimer, 1000, false);
   timerAlarmEnable(servoTimer);
-  Serial.println("[SERVO] Fallback: HW-Timer aktiv");
+  console.println("[SERVO] Fallback: HW-Timer aktiv");
 }
 
 void rc_steering_init_ledc() {
   ledcDetachPin(LENKUNG_PIN);
   bool ok = ledcSetup(SERVO_CH, SERVO_FREQ, SERVO_RES_BITS);
   if (!ok) {
-    Serial.println("[SERVO] LEDC Setup FAIL");
+    console.println("[SERVO] LEDC Setup FAIL");
     return;
   }
   ledcAttachPin(LENKUNG_PIN, SERVO_CH);
   ledcWrite(SERVO_CH, usToDuty(SERVO_MID_US, SERVO_RES_BITS));
-  Serial.printf("[SERVO] LEDC aktiv (CH=%d, freq=%d, bits=%d, mid=%dus)\n",
+  console.printf("[SERVO] LEDC aktiv (CH=%d, freq=%d, bits=%d, mid=%dus)\n",
     SERVO_CH, SERVO_FREQ, SERVO_RES_BITS, SERVO_MID_US);
 }
 
@@ -84,7 +85,7 @@ void rc_steering_write_us(int targetUs) {
   }
 
   if (logFlags.servo)
-    Serial.printf("[SERVO] write_us target=%d -> actual=%d (%s)\n",
+    console.printf("[SERVO] write_us target=%d -> actual=%d (%s)\n",
       targetUs, currentServoUs, g_useTimerFallback ? "timer" : "ledc");
 
   if (!g_useTimerFallback) {
@@ -107,7 +108,7 @@ void rc_steering_apply(int16_t steerInput) {
   currentServoUs = constrain(targetUs, SERVO_MIN_US, SERVO_MAX_US);
 
   if (logFlags.servo)
-    Serial.printf("[SERVO] input=%d dz=%d inv=%d filt=%.1f gain=%.2f -> %dus\n",
+    console.printf("[SERVO] input=%d dz=%d inv=%d filt=%.1f gain=%.2f -> %dus\n",
       steerInput, (int)(abs(steerInput) < (int)settings.steerDeadzone),
       settings.steerInvert, steerFilt, settings.steerGain, currentServoUs);
 }

@@ -1,6 +1,7 @@
 #include "rc_ota.h"
 #include "rc_settings.h"
 #include "rc_serial.h"
+#include "rc_console.h"
 
 static uint32_t nextFotaCheckMs = 0;
 
@@ -33,23 +34,23 @@ static bool fotaFlashURL(const char* url, int type) {
   http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
   http.setTimeout(30000);
   if (!http.begin(client, url)) {
-    Serial.printf("[OTA] http.begin failed: %s\n", url);
+    console.printf("[OTA] http.begin failed: %s\n", url);
     return false;
   }
   http.addHeader("User-Agent", "ESP32-OTA/1.0");
 
   int code = http.GET();
   if (code != 200) {
-    Serial.printf("[OTA] HTTP %d for %s\n", code, url);
+    console.printf("[OTA] HTTP %d for %s\n", code, url);
     http.end();
     return false;
   }
 
   int totalSize = http.getSize();
-  Serial.printf("[OTA] Download size: %d bytes\n", totalSize);
+  console.printf("[OTA] Download size: %d bytes\n", totalSize);
 
   if (!Update.begin(totalSize > 0 ? (size_t)totalSize : UPDATE_SIZE_UNKNOWN, type)) {
-    Serial.printf("[OTA] Update.begin failed: %s\n", Update.errorString());
+    console.printf("[OTA] Update.begin failed: %s\n", Update.errorString());
     http.end();
     return false;
   }
@@ -61,7 +62,7 @@ static bool fotaFlashURL(const char* url, int type) {
 
   while (http.connected() && (totalSize < 0 || written < totalSize)) {
     if (millis() > deadline) {
-      Serial.println("[OTA] Timeout while downloading");
+      console.println("[OTA] Timeout while downloading");
       http.end();
       Update.abort();
       return false;
@@ -72,7 +73,7 @@ static bool fotaFlashURL(const char* url, int type) {
       if (n > 0) {
         size_t w = Update.write(buf, n);
         if (w != (size_t)n) {
-          Serial.printf("[OTA] Write mismatch %d != %d: %s\n", (int)w, n, Update.errorString());
+          console.printf("[OTA] Write mismatch %d != %d: %s\n", (int)w, n, Update.errorString());
           http.end();
           Update.abort();
           return false;
@@ -87,11 +88,11 @@ static bool fotaFlashURL(const char* url, int type) {
   http.end();
 
   if (!Update.end(true)) {
-    Serial.printf("[OTA] Update.end failed: %s\n", Update.errorString());
+    console.printf("[OTA] Update.end failed: %s\n", Update.errorString());
     return false;
   }
 
-  Serial.printf("[OTA] Flashed %d bytes OK\n", written);
+  console.printf("[OTA] Flashed %d bytes OK\n", written);
   return true;
 }
 
@@ -104,7 +105,7 @@ static bool fotaCheckAndUpdate() {
   HTTPClient apiHttp;
   apiHttp.setTimeout(10000);
   if (!apiHttp.begin(apiClient, FOTA_API_URL)) {
-    Serial.println("[FOTA] API http.begin failed");
+    console.println("[FOTA] API http.begin failed");
     return false;
   }
   apiHttp.addHeader("User-Agent", "ESP32-OTA/1.0");
@@ -112,7 +113,7 @@ static bool fotaCheckAndUpdate() {
 
   int code = apiHttp.GET();
   if (code != 200) {
-    Serial.printf("[FOTA] API HTTP %d\n", code);
+    console.printf("[FOTA] API HTTP %d\n", code);
     apiHttp.end();
     return false;
   }
@@ -126,77 +127,118 @@ static bool fotaCheckAndUpdate() {
   apiHttp.end();
 
   if (err) {
-    Serial.printf("[FOTA] JSON error: %s\n", err.c_str());
+    console.printf("[FOTA] JSON error: %s\n", err.c_str());
     return false;
   }
 
   const char* tag = doc["tag_name"];
   if (!tag || strlen(tag) == 0) {
-    Serial.println("[FOTA] tag_name missing");
+    console.println("[FOTA] tag_name missing");
     return false;
   }
 
-  Serial.printf("[FOTA] Remote: %s | Local: %s\n", tag, FOTA_CURRENT_VERSION);
+  console.printf("[FOTA] Remote: %s | Local: %s\n", tag, FOTA_CURRENT_VERSION);
 
   if (!fotaIsNewer(tag, FOTA_CURRENT_VERSION)) {
-    Serial.println("[FOTA] Firmware is up to date");
+    console.println("[FOTA] Firmware is up to date");
     return false;
   }
 
-  Serial.printf("[FOTA] Updating %s -> %s\n", FOTA_CURRENT_VERSION, tag);
+  console.printf("[FOTA] Updating %s -> %s\n", FOTA_CURRENT_VERSION, tag);
 
-  Serial.println("[FOTA] Flashing LittleFS...");
+  console.println("[FOTA] Flashing LittleFS...");
   if (!fotaFlashURL(FOTA_FS_URL, U_SPIFFS)) {
-    Serial.println("[FOTA] LittleFS flash FAILED — aborting");
+    console.println("[FOTA] LittleFS flash FAILED — aborting");
     return false;
   }
-  Serial.println("[FOTA] LittleFS OK");
+  console.println("[FOTA] LittleFS OK");
 
-  Serial.println("[FOTA] Flashing firmware...");
+  console.println("[FOTA] Flashing firmware...");
   if (!fotaFlashURL(FOTA_FW_URL, U_FLASH)) {
-    Serial.println("[FOTA] Firmware flash FAILED");
+    console.println("[FOTA] Firmware flash FAILED");
     return false;
   }
-  Serial.println("[FOTA] Firmware OK — restarting");
+  console.println("[FOTA] Firmware OK — restarting");
 
   delay(500);
   ESP.restart();
   return true;
 }
 
+// ---- ArduinoOTA setup ----
+static void setupArduinoOTA() {
+  ArduinoOTA.setHostname("esp-rc-car");
+#ifdef OTA_PASSWORD
+  ArduinoOTA.setPassword(OTA_PASSWORD);
+#endif
+
+  ArduinoOTA.onStart([]() {
+    const char* type = (ArduinoOTA.getCommand() == U_FLASH) ? "firmware" : "filesystem";
+    console.printf("[OTA] ArduinoOTA start: %s\n", type);
+  });
+  ArduinoOTA.onEnd([]() {
+    console.println("\n[OTA] ArduinoOTA done — restarting");
+  });
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    console.printf("[OTA] Progress: %u%%\r", (progress * 100) / total);
+  });
+  ArduinoOTA.onError([](ota_error_t error) {
+    const char* msg = "Unknown";
+    if (error == OTA_AUTH_ERROR)    msg = "Auth Failed";
+    if (error == OTA_BEGIN_ERROR)   msg = "Begin Failed";
+    if (error == OTA_CONNECT_ERROR) msg = "Connect Failed";
+    if (error == OTA_RECEIVE_ERROR) msg = "Receive Failed";
+    if (error == OTA_END_ERROR)     msg = "End Failed";
+    console.printf("[OTA] Error: %s\n", msg);
+  });
+
+  ArduinoOTA.begin();
+  console.println("[OTA] ArduinoOTA ready");
+}
+
 // ---- Public API ----
 void rc_boot_log() {
   delay(1000);
-  Serial.println();
-  Serial.println("========================================");
-  Serial.println("       ESP-RC-Car Firmware");
-  Serial.printf("       Version: %s\n", FOTA_CURRENT_VERSION);
-  Serial.println("========================================");
-  Serial.println();
-  Serial.println("Serial Commands (type 'help' for details):");
-  Serial.println("  status | settings | reboot | ota | portal");
-  Serial.println("  wifi | scan | drv | motor off/a/b");
-  Serial.println("  log off/on/adc/drv/fota/warn/ws/net/http/servo");
-  Serial.println();
-  Serial.println("[BOOT] Initializing DRV8323, Battery Monitor, WiFi & Control...");
+  console.println();
+  console.println("========================================");
+  console.println("       ESP-RC-Car Firmware");
+  console.printf("       Version: %s\n", FOTA_CURRENT_VERSION);
+  console.println("========================================");
+  console.println();
+  console.println("Serial Commands (type 'help' for details):");
+  console.println("  status | settings | reboot | ota | portal | panel");
+  console.println("  wifi | scan | drv | motor off/a/b");
+  console.println("  log off/on/adc/drv/fota/warn/ws/net/http/servo");
+  console.println();
+  console.println("[BOOT] Initializing DRV8323, Battery Monitor, WiFi & Control...");
 }
 
 void rc_ota_setup(bool connected) {
-  if (connected && settings.otaEnabled) {
-    nextFotaCheckMs = millis() + 15000UL;
-    Serial.println("[FOTA] OTA check scheduled in 15s");
+  if (connected) {
+    setupArduinoOTA();
+    if (settings.otaEnabled) {
+      nextFotaCheckMs = millis() + 15000UL;
+      console.println("[FOTA] OTA check scheduled in 15s");
+    } else {
+      console.println("[FOTA] Auto update disabled");
+    }
   } else if (!settings.otaEnabled) {
-    Serial.println("[FOTA] Auto update disabled");
+    console.println("[FOTA] Auto update disabled");
   }
 }
 
 void rc_ota_loop() {
+  // ArduinoOTA always runs when WiFi is connected
+  if (WiFi.status() == WL_CONNECTED) {
+    ArduinoOTA.handle();
+  }
+
   if (!settings.otaEnabled) return;
   if (WiFi.status() != WL_CONNECTED) {
     if (logFlags.fota) {
       static uint32_t lastWarn = 0;
       if (millis() - lastWarn > 30000) {
-        Serial.println("[FOTA] Skipped — WiFi not connected");
+        console.println("[FOTA] Skipped — WiFi not connected");
         lastWarn = millis();
       }
     }
@@ -207,7 +249,7 @@ void rc_ota_loop() {
   uint32_t now = millis();
   if (now >= nextFotaCheckMs) {
     nextFotaCheckMs = now + fotaCheckIntervalMs;
-    if (logFlags.fota) Serial.printf("[FOTA] Checking for update... (next in %lus)\n",
+    if (logFlags.fota) console.printf("[FOTA] Checking for update... (next in %lus)\n",
       fotaCheckIntervalMs / 1000);
     fotaCheckAndUpdate();
   }

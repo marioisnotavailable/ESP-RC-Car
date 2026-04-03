@@ -16,6 +16,7 @@ struct DeviceSettings {
   uint16_t failsafeMs;
   uint32_t beaconIntervalMs;
   char     apPrefix[32];
+  bool     alwaysStartPanel;
   // Steering
   bool     steerInvert;
   float    steerGain;         // 0.3 .. 1.5
