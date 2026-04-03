@@ -78,6 +78,7 @@ async function refreshAll() {
 async function refreshAdcMonitor() {
   try {
     const adc = await apiGetAdc();
+    adcApiFailCount = 0;
     const vAdc = Number(adc.vAdc);
     const vBatt = Number(adc.vBatt);
     const percent = Number(adc.percent);
@@ -93,10 +94,27 @@ async function refreshAdcMonitor() {
     if (cfgBattPercentEl && Number.isFinite(percent)) cfgBattPercentEl.textContent = String(Math.round(percent));
   } catch (e) {
     console.error('ADC refresh failed', e);
+    adcApiFailCount++;
+
+    if (adcApiFailCount >= API_RECONNECT_FAIL_THRESHOLD && ws && ws.readyState === WebSocket.OPEN) {
+      console.warn('ADC API unreachable while WS is open, forcing reconnect');
+      setTerminalState(false);
+      appendTerminal('[TERM] API unreachable, reconnecting...\n');
+      try { ws.close(); } catch (err) {}
+      ws = null;
+      wsWasOnline = false;
+      scheduleWsReconnect();
+    }
   }
 }
 
 const MAX_TERMINAL_CHARS = 20000;
+const WS_RECONNECT_MIN_MS = 100;
+const WS_RECONNECT_MAX_MS = 2500;
+const WS_GUARD_INTERVAL_MS = 500;
+const WS_STALE_TIMEOUT_MS = 3000;
+const WS_CONNECT_TIMEOUT_MS = 2500;
+const API_RECONNECT_FAIL_THRESHOLD = 2;
 
 // WebSocket for battery + terminal streaming
 let ws;
@@ -104,6 +122,14 @@ let termOutputEl = null;
 let termStateEl = null;
 let terminalCardEl = null;
 let termFullscreenBtn = null;
+let wsReconnectTimer = null;
+let wsReconnectDelayMs = WS_RECONNECT_MIN_MS;
+let wsWasOnline = false;
+let wsEverConnected = false;
+let lastWsRxMs = 0;
+let wsConnectingSinceMs = 0;
+let adcApiFailCount = 0;
+let refreshUiAfterReconnect = null;
 
 function setTerminalFullscreenUi(active) {
   if (!termFullscreenBtn) return;
@@ -171,18 +197,60 @@ function sendTerminalCommand(cmd) {
   return true;
 }
 
+function scheduleWsReconnect() {
+  if (wsReconnectTimer) return;
+  const waitMs = wsReconnectDelayMs;
+  wsReconnectTimer = setTimeout(() => {
+    wsReconnectTimer = null;
+    connectWebSocket();
+  }, waitMs);
+  wsReconnectDelayMs = Math.min(Math.round(wsReconnectDelayMs * 1.25), WS_RECONNECT_MAX_MS);
+}
+
 function connectWebSocket() {
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+    return;
+  }
+
+  if (wsReconnectTimer) {
+    clearTimeout(wsReconnectTimer);
+    wsReconnectTimer = null;
+  }
+
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsUrl = `${protocol}//${window.location.hostname}:81/`;
-  ws = new WebSocket(wsUrl);
+  try {
+    wsConnectingSinceMs = Date.now();
+    ws = new WebSocket(wsUrl);
+  } catch (e) {
+    console.error('WebSocket create failed:', e);
+    scheduleWsReconnect();
+    return;
+  }
 
-  ws.onopen = () => {
+  ws.onopen = async () => {
     console.log('WebSocket connected');
+    const firstConnection = !wsEverConnected;
+    wsEverConnected = true;
+    wsWasOnline = true;
+    adcApiFailCount = 0;
+    lastWsRxMs = Date.now();
+    wsConnectingSinceMs = 0;
+    wsReconnectDelayMs = WS_RECONNECT_MIN_MS;
     setTerminalState(true);
-    appendTerminal('[TERM] Connected\n');
+    appendTerminal(firstConnection ? '[TERM] Connected\n' : '[TERM] Reconnected\n');
+    if (typeof refreshUiAfterReconnect === 'function') {
+      try {
+        await refreshUiAfterReconnect();
+      } catch (e) {
+        console.error('UI refresh after reconnect failed:', e);
+      }
+    }
   };
 
   ws.onmessage = (event) => {
+    adcApiFailCount = 0;
+    lastWsRxMs = Date.now();
     const msg = event.data;
 
     if (typeof msg !== 'string') return;
@@ -208,10 +276,14 @@ function connectWebSocket() {
   };
 
   ws.onclose = () => {
-    console.log('WebSocket disconnected, reconnecting in 2s...');
+    const wasOnline = wsWasOnline;
+    wsWasOnline = false;
+    wsConnectingSinceMs = 0;
+    ws = null;
+    console.log('WebSocket disconnected, reconnecting...');
     setTerminalState(false);
-    appendTerminal('[TERM] Disconnected, retrying...\n');
-    setTimeout(connectWebSocket, 2000);
+    if (wasOnline) appendTerminal('[TERM] Disconnected, retrying...\n');
+    scheduleWsReconnect();
   };
 }
 
@@ -338,7 +410,8 @@ window.addEventListener('DOMContentLoaded', () => {
   const cfgSave = document.getElementById('cfg-save');
   const cfgMsg = document.getElementById('cfg-msg');
 
-  apiGetSettings().then(s => {
+  const applySettingsToUi = (s) => {
+    if (!s) return;
     cfgVersion.textContent = s.version;
     cfg['cfg-ota'].checked = s.otaEnabled;
     cfg['cfg-otaInterval'].value = Math.round(s.otaIntervalMs / 60000);
@@ -356,7 +429,24 @@ window.addEventListener('DOMContentLoaded', () => {
     cfg['cfg-maxThrottle'].value = String(s.maxThrottlePct);
     document.getElementById('cfg-adcCorr').textContent = s.adcCorrFactor.toFixed(4);
     document.getElementById('cfg-vBatt').textContent = s.vBatt.toFixed(2);
-  }).catch(() => {});
+  };
+
+  const refreshSettingsUi = async () => {
+    try {
+      const s = await apiGetSettings();
+      applySettingsToUi(s);
+    } catch (e) {
+      console.error('Settings refresh failed', e);
+    }
+  };
+
+  refreshSettingsUi();
+
+  refreshUiAfterReconnect = async () => {
+    await refreshAll();
+    await refreshAdcMonitor();
+    await refreshSettingsUi();
+  };
 
   cfgSave.addEventListener('click', async () => {
     cfgMsg.textContent = '';
@@ -403,4 +493,39 @@ window.addEventListener('DOMContentLoaded', () => {
   refreshAdcMonitor();
   setInterval(refreshAdcMonitor, 2000);
   connectWebSocket();
+  setInterval(() => {
+    const now = Date.now();
+
+    if (!ws) {
+      connectWebSocket();
+      return;
+    }
+
+    if (ws.readyState === WebSocket.OPEN) {
+      if (lastWsRxMs > 0 && (now - lastWsRxMs) > WS_STALE_TIMEOUT_MS) {
+        console.warn('WebSocket stale, forcing reconnect');
+        setTerminalState(false);
+        appendTerminal('[TERM] Connection stale, reconnecting...\n');
+        try { ws.close(); } catch (e) {}
+        ws = null;
+        wsWasOnline = false;
+        scheduleWsReconnect();
+      }
+      return;
+    }
+
+    if (ws.readyState === WebSocket.CONNECTING) {
+      if (wsConnectingSinceMs > 0 && (now - wsConnectingSinceMs) > WS_CONNECT_TIMEOUT_MS) {
+        console.warn('WebSocket connect timeout, forcing reconnect');
+        try { ws.close(); } catch (e) {}
+        ws = null;
+        wsConnectingSinceMs = 0;
+        scheduleWsReconnect();
+      }
+      return;
+    }
+
+    // CLOSING or CLOSED
+    connectWebSocket();
+  }, WS_GUARD_INTERVAL_MS);
 });

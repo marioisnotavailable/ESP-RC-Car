@@ -20,7 +20,8 @@ static esp_adc_cal_characteristics_t adc_chars;
 static bool          cali_ok        = false;
 static int           lowVoltageHits = 0;
 static unsigned long lastEval       = 0;
-static uint32_t      mvAccum        = 0;
+static unsigned long lastSampleMs   = 0;
+static uint32_t      rawAccum       = 0;
 static int           sampleCount    = 0;
 
 static void adc_cali_init() {
@@ -50,27 +51,55 @@ void rc_battery_setup() {
 
   adc1_config_width(ADC_WIDTH_BIT_12);
   adc1_config_channel_atten(ADC_UB_CHANNEL, ADC_ATTEN_DB_11);
+  adc_set_clk_div(ADC_CLK_DIVIDER);
   adc_cali_init();
 
+  lastSampleMs = millis();
   lastEval = millis();
 }
 
 void rc_battery_loop() {
-  int raw = adc1_get_raw(ADC_UB_CHANNEL);
-  if (raw >= 0) {
-    mvAccum += esp_adc_cal_raw_to_voltage(raw, &adc_chars);
-    sampleCount++;
+  unsigned long now = millis();
+
+  // Deterministic sampling cadence independent from loop jitter.
+  if ((unsigned long)(now - lastSampleMs) >= SAMPLE_INTERVAL_MS) {
+    unsigned long elapsed = now - lastSampleMs;
+    unsigned long steps = elapsed / SAMPLE_INTERVAL_MS;
+    if (steps > 4) steps = 4;  // Avoid large catch-up bursts after blocking operations.
+    lastSampleMs += steps * SAMPLE_INTERVAL_MS;
+
+    for (unsigned long i = 0; i < steps; ++i) {
+        uint32_t subAccum = 0;
+        int subCount = 0;
+        for (int s = 0; s < ADC_SUBSAMPLES_PER_SAMPLE; ++s) {
+          int raw = adc1_get_raw(ADC_UB_CHANNEL);
+          if (raw >= 0) {
+            subAccum += (uint32_t)raw;
+            subCount++;
+          }
+        }
+
+        if (subCount > 0) {
+          uint32_t rawAvg = (subAccum + (uint32_t)(subCount / 2)) / (uint32_t)subCount;
+          rawAccum += rawAvg;
+        sampleCount++;
+      }
+    }
   }
 
-  if (millis() - lastEval < RESULT_INTERVAL_MS) return;
-  lastEval = millis();
+  if ((unsigned long)(now - lastEval) < RESULT_INTERVAL_MS && sampleCount < SAMPLE_COUNT) return;
+  lastEval = now;
 
-  if (sampleCount == 0) {
+  uint32_t accum = rawAccum;
+  int count = sampleCount;
+
+  if (count <= 0) {
     console.println("[ERR] Keine Samples");
     return;
   }
 
-  float vAdc  = (float)(mvAccum / sampleCount) / 1000.0f;
+  uint32_t avgRaw = (accum + (uint32_t)(count / 2)) / (uint32_t)count;
+  float vAdc = (float)esp_adc_cal_raw_to_voltage(avgRaw, &adc_chars) / 1000.0f;
   float vBatt = vAdc * DIVIDER_RATIO * settings.adcCorrFactor;
 
   float percent = ((vBatt - BATT_MIN_VOLTAGE) / BATT_VOLTAGE_RANGE) * 100.0f;
@@ -80,10 +109,10 @@ void rc_battery_loop() {
   vAdc_last         = vAdc;
 
   if (logFlags.adc)
-    console.printf("[ADC] V_ADC: %.3fV (%s) | V_Batt: %.2fV (vBatt=%d) | Samples: %d\n",
-                  vAdc, cali_ok ? "kalibriert" : "unkalibriert", vBatt, batteryPercent, sampleCount);
+    console.printf("[ADC] raw:%lu | V_ADC: %.3fV (%s) | V_Batt: %.2fV (vBatt=%d) | Samples: %d\n",
+                  (unsigned long)avgRaw, vAdc, cali_ok ? "kalibriert" : "unkalibriert", vBatt, batteryPercent, count);
 
-  mvAccum     = 0;
+  rawAccum    = 0;
   sampleCount = 0;
 
   if (vBatt <= settings.battOffV) {

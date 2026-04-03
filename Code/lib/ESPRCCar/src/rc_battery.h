@@ -13,6 +13,10 @@
 #define RESULT_INTERVAL_MS  1000
 #define LOW_CONFIRM_COUNT   3
 
+// ADC stabilization (no temporal smoothing)
+#define ADC_CLK_DIVIDER             255
+#define ADC_SUBSAMPLES_PER_SAMPLE   3
+
 extern volatile int batteryPercent;
 extern float vBatt_float_last;
 extern float vAdc_last;
