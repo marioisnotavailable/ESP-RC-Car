@@ -160,7 +160,10 @@ void rc_wifi_scan() {
   lastScan.clear();
   if (logFlags.net) console.println("[NET] WiFi-Scan gestartet...");
   WiFi.setSleep(true);
-  WiFi.mode(WIFI_AP_STA);
+  // Keep current mode — only add STA if not already present
+  if (!(WiFi.getMode() & WIFI_MODE_STA)) {
+    WiFi.mode((wifi_mode_t)(WiFi.getMode() | WIFI_MODE_STA));
+  }
   int n = WiFi.scanNetworks(false, true, true, SCAN_DWELL_MS);
   for (int i = 0; i < n; ++i) {
     ScanNet s{WiFi.SSID(i), WiFi.RSSI(i), (uint8_t)WiFi.encryptionType(i)};
