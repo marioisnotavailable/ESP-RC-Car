@@ -16,8 +16,49 @@ static uint32_t nextBattSendMs = 0;
 static bool failsafeActive = false;
 static bool wsStarted = false;
 
+// Keep recent terminal output in RAM so clients can see logs from boot.
+static const size_t TERM_BACKLOG_MAX = 24576;
+static uint8_t termBacklog[TERM_BACKLOG_MAX];
+static size_t termBacklogStart = 0;
+static size_t termBacklogLen = 0;
+
+void rc_websocket_terminal_store(const uint8_t* buf, size_t size) {
+  if (!buf || size == 0) return;
+
+  for (size_t i = 0; i < size; ++i) {
+    if (termBacklogLen < TERM_BACKLOG_MAX) {
+      size_t idx = (termBacklogStart + termBacklogLen) % TERM_BACKLOG_MAX;
+      termBacklog[idx] = buf[i];
+      termBacklogLen++;
+    } else {
+      termBacklog[termBacklogStart] = buf[i];
+      termBacklogStart = (termBacklogStart + 1) % TERM_BACKLOG_MAX;
+    }
+  }
+}
+
+void rc_websocket_terminal_send_backlog(uint8_t clientNum) {
+  if (!wsStarted || termBacklogLen == 0) return;
+
+  const size_t chunk = 180;
+  uint8_t frame[5 + chunk];
+  memcpy(frame, "TERM:", 5);
+
+  size_t sent = 0;
+  while (sent < termBacklogLen) {
+    size_t n = min(chunk, termBacklogLen - sent);
+    for (size_t i = 0; i < n; ++i) {
+      size_t idx = (termBacklogStart + sent + i) % TERM_BACKLOG_MAX;
+      frame[5 + i] = termBacklog[idx];
+    }
+    ws.sendTXT(clientNum, frame, n + 5);
+    sent += n;
+  }
+}
+
 static void onWs(uint8_t num, WStype_t type, uint8_t* payload, size_t len) {
   if (type == WStype_CONNECTED) {
+    rc_websocket_terminal_send_backlog(num);
     IPAddress ip = ws.remoteIP(num);
     if (logFlags.ws)
       console.printf("[WS] Client #%u connected from %s (total: %u)\n",

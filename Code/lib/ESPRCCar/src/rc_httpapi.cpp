@@ -6,7 +6,6 @@
 #include "rc_console.h"
 #include "rc_pins.h"
 #include <LittleFS.h>
-#include <ESPmDNS.h>
 
 #ifndef FOTA_CURRENT_VERSION
 #define FOTA_CURRENT_VERSION "v0.0.0"
@@ -18,39 +17,11 @@ static bool dnsActive = false;
 static bool routesRegistered = false;
 static bool httpStarted = false;
 static bool captivePortalMode = false;
-static bool mdnsActive = false;
-static String mdnsHost;
 
 static void setNoCacheHeaders() {
   httpServer.sendHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
   httpServer.sendHeader("Pragma", "no-cache");
   httpServer.sendHeader("Expires", "0");
-}
-
-static String buildMdnsHost() {
-  char suffix[7];
-  snprintf(suffix, sizeof(suffix), "%06lx", (unsigned long)(ESP.getEfuseMac() & 0xFFFFFF));
-  String host = "esp-rccar-";
-  host += suffix;
-  host.toLowerCase();
-  return host;
-}
-
-static void startMdnsService() {
-  if (mdnsActive) {
-    MDNS.end();
-    mdnsActive = false;
-  }
-
-  mdnsHost = buildMdnsHost();
-  if (!MDNS.begin(mdnsHost.c_str())) {
-    console.println("[HTTP] mDNS start failed");
-    return;
-  }
-
-  MDNS.addService("http", "tcp", 80);
-  mdnsActive = true;
-  console.printf("[HTTP] mDNS started: http://%s.local/\n", mdnsHost.c_str());
 }
 
 // ---- File serving ----
@@ -307,7 +278,6 @@ void rc_start_portal() {
   dnsActive = true;
   ensureHttpRoutesRegistered();
   ensureHttpServerStarted();
-  startMdnsService();
 }
 
 bool rc_start_panel_sta() {
@@ -333,7 +303,6 @@ bool rc_start_panel_sta() {
 
   ensureHttpRoutesRegistered();
   ensureHttpServerStarted();
-  startMdnsService();
 
   console.printf("[WiFi] Config panel started on STA IP=%s\n", WiFi.localIP().toString().c_str());
   return true;
