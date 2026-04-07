@@ -15,3 +15,4 @@
 #include "rc_fs.h"
 #include "rc_ota.h"
 #include "rc_serial.h"
+#include "rc_recovery.h"
