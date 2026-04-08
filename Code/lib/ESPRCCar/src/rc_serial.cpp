@@ -7,6 +7,7 @@
 #include "rc_httpapi.h"
 #include "rc_ota.h"
 #include "rc_console.h"
+#include "rc_recovery.h"
 
 LogFlags logFlags = { true, true, true, true, true, true, true, true };
 
@@ -37,6 +38,7 @@ static void printHelp() {
   console.println("  log servo   — [SERVO] Steering-Logs toggeln");
   console.println("  log off     — Alle Loop-Logs aus");
   console.println("  log on      — Alle Loop-Logs an");
+  console.println("  recovery    — Crash-Counter zuruecksetzen + Safe Mode verlassen");
   console.println("=======================");
   console.println();
 }
@@ -60,6 +62,7 @@ static void printStatus() {
   console.println();
   console.println("--- Status ---");
   console.printf("  Firmware:    %s\n", FOTA_CURRENT_VERSION);
+  console.printf("  Safe Mode:   %s\n", safeMode ? "JA" : "Nein");
   console.printf("  Batterie:    %.2fV (%d%%)\n", vBatt_float_last, batteryPercent);
   console.printf("  WiFi Mode:   %s\n",
     (WiFi.getMode() & WIFI_MODE_STA) ? "STA" :
@@ -167,6 +170,10 @@ void rc_handle_command(const String& cmd) {
   else if (cmd == "portal") {
     console.println("[CMD] Config-Portal wird gestartet...");
     rc_start_portal();
+  }
+  else if (cmd == "recovery") {
+    rc_recovery_mark_stable();
+    console.println("[CMD] Crash-Counter reset, reboot fuer normalen Betrieb");
   }
   else if (cmd == "panel") {
     if (rc_start_panel_sta())
