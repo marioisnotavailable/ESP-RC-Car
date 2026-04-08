@@ -156,21 +156,60 @@ bool rc_network_delete(int idx) {
 }
 
 // ---- WiFi scan ----
-void rc_wifi_scan() {
-  lastScan.clear();
-  if (logFlags.net) console.println("[NET] WiFi-Scan gestartet...");
-  WiFi.setSleep(true);
-  // Keep current mode — only add STA if not already present
-  if (!(WiFi.getMode() & WIFI_MODE_STA)) {
+static uint32_t scanReadyAt = 0;  // millis() when async scan may start (deferred)
+
+static void scanEnsureSTA() {
+  WiFi.setSleep(false);
+  if (!(WiFi.getMode() & WIFI_MODE_STA))
     WiFi.mode((wifi_mode_t)(WiFi.getMode() | WIFI_MODE_STA));
-  }
-  int n = WiFi.scanNetworks(false, true, true, SCAN_DWELL_MS);
+  rc_apply_wifi_tx_power();  // mode switch can reset TX power
+}
+
+static void scanCollect() {
+  int n = WiFi.scanComplete();
+  if (n < 0) return;
+  lastScan.clear();
   for (int i = 0; i < n; ++i) {
-    ScanNet s{WiFi.SSID(i), WiFi.RSSI(i), (uint8_t)WiFi.encryptionType(i)};
-    lastScan.push_back(s);
+    lastScan.push_back({WiFi.SSID(i), WiFi.RSSI(i), (uint8_t)WiFi.encryptionType(i)});
   }
   WiFi.scanDelete();
   console.printf("[NET] Scan: %d Netzwerk(e) gefunden\n", (int)lastScan.size());
+}
+
+// synchronous — for serial command
+void rc_wifi_scan() {
+  if (logFlags.net) console.println("[NET] WiFi-Scan gestartet...");
+  WiFi.scanDelete();  // clear any stale state
+  scanEnsureSTA();
+  int n = WiFi.scanNetworks(false, true, false, SCAN_DWELL_MS);
+  lastScan.clear();
+  for (int i = 0; i < n; ++i) {
+    lastScan.push_back({WiFi.SSID(i), WiFi.RSSI(i), (uint8_t)WiFi.encryptionType(i)});
+  }
+  WiFi.scanDelete();
+  console.printf("[NET] Scan: %d Netzwerk(e) gefunden\n", (int)lastScan.size());
+}
+
+// schedule async scan — actually fires in rc_wifi_scan_loop() after radio settles
+void rc_wifi_scan_start() {
+  scanReadyAt = millis() + 600;  // give radio 600ms to settle (no delay!)
+  if (logFlags.net) console.println("[NET] Async-Scan geplant...");
+}
+
+// call from loop() — starts deferred scan, collects results when ready
+void rc_wifi_scan_loop() {
+  // fire deferred scan once timer expires
+  if (scanReadyAt && millis() >= scanReadyAt) {
+    scanReadyAt = 0;
+    if (WiFi.scanComplete() != WIFI_SCAN_RUNNING) {
+      WiFi.scanDelete();
+      scanEnsureSTA();
+      WiFi.scanNetworks(true, true, false, SCAN_DWELL_MS);
+      if (logFlags.net) console.println("[NET] Async-Scan gestartet...");
+    }
+  }
+  // collect when done
+  if (WiFi.scanComplete() >= 0) scanCollect();
 }
 
 // ---- WiFi connect ----

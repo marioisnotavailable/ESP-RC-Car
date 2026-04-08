@@ -131,9 +131,9 @@ static void ensureHttpRoutesRegistered() {
   });
 
   httpServer.on("/api/scan", HTTP_POST, []() {
-    if (logFlags.http) console.println("[HTTP] POST /api/scan — starting WiFi scan...");
-    rc_wifi_scan();
-    if (logFlags.http) console.printf("[HTTP] /api/scan result: %d networks\n", (int)lastScan.size());
+    if (logFlags.http) console.println("[HTTP] POST /api/scan — serving cached, starting async scan...");
+    rc_wifi_scan_start();
+    if (logFlags.http) console.printf("[HTTP] /api/scan cached: %d networks\n", (int)lastScan.size());
     String j = "[";
     for (size_t i = 0; i < lastScan.size(); ++i) {
       if (i) j += ',';
@@ -266,13 +266,11 @@ void rc_start_portal() {
   String apSsid = String(settings.apPrefix) + String((uint32_t)(ESP.getEfuseMac() & 0xFFFFFF), HEX);
   WiFi.mode(WIFI_AP_STA);
   WiFi.persistent(false);
-  WiFi.setSleep(true);
   WiFi.softAP(apSsid.c_str());
   IPAddress ip = WiFi.softAPIP();
 
   console.printf("[WiFi] Config AP started: SSID=%s IP=%s\n", apSsid.c_str(), ip.toString().c_str());
-
-  rc_wifi_scan();
+  rc_wifi_scan_start();
 
   dnsServer.start(53, "*", ip);
   dnsActive = true;

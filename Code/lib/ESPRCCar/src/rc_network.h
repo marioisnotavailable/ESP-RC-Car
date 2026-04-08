@@ -9,7 +9,7 @@
 // WiFi timing
 #define WIFI_CONNECT_TOTAL_MS  30000UL
 #define WIFI_CONNECT_POLL_MS   250
-#define SCAN_DWELL_MS          40
+#define SCAN_DWELL_MS          300
 
 // UDP Discovery
 #define DISCOVERY_PORT         49352
@@ -45,7 +45,9 @@ bool rc_network_add(const String& ssid, const String& pass);
 bool rc_network_delete(int idx);
 
 // WiFi scanning
-void rc_wifi_scan();
+void rc_wifi_scan();        // synchronous (serial use)
+void rc_wifi_scan_start();  // start async scan (non-blocking)
+void rc_wifi_scan_loop();   // collect results when ready (call from loop)
 
 // WiFi connection (returns true if connected as STA)
 bool rc_wifi_connect();

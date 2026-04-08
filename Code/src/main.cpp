@@ -21,6 +21,7 @@ void setup() {
 
 void loop() {
   rc_mrd_loop();                    // Multi-Reset Zaehler nach Timeout zuruecksetzen
+  rc_wifi_scan_loop();              // Async WiFi-Scan Ergebnisse einsammeln
   rc_portal_loop();                 // DNS + HTTP fuer Config-Portal verarbeiten
   rc_websocket_loop();              // WebSocket-Befehle (Throttle/Steering) empfangen
   rc_udp_loop();                    // UDP-Discovery Anfragen beantworten + Beacon senden
