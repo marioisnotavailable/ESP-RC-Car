@@ -27,7 +27,8 @@ void rc_recovery_check_boot() {
   bootMs = millis();
 
   // Task-Watchdog auf Main-Loop (10s Timeout)
-  esp_task_wdt_init(10, true);
+  const esp_task_wdt_config_t wdt_cfg = { .timeout_ms = 10000, .idle_core_mask = 0, .trigger_panic = true };
+  esp_task_wdt_init(&wdt_cfg);
   esp_task_wdt_add(NULL);
 }
 

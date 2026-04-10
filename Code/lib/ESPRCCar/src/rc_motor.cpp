@@ -10,8 +10,8 @@ static int      motorTestPhase       = 1;
 static uint32_t nextMotorDirSwitchMs = 0;
 
 void rc_motor_all_off() {
-  ledcWrite(CH_PWM_A, 0);
-  ledcWrite(CH_PWM_B, 0);
+  ledcWrite(PIN_INHA, 0);
+  ledcWrite(PIN_INHB, 0);
   digitalWrite(PIN_INLA, LOW);
   digitalWrite(PIN_INLB, LOW);
   digitalWrite(PIN_INHC, LOW);
@@ -23,17 +23,17 @@ void rc_motor_apply_phase(int phase) {
   delayMicroseconds(200);
 
   if (phase == 0) {
-    ledcWrite(CH_PWM_A, PWM_DUTY);
-    ledcWrite(CH_PWM_B, 0);
+    ledcWrite(PIN_INHA, PWM_DUTY);
+    ledcWrite(PIN_INHB, 0);
     if (logFlags.drv)
-      console.printf("[DRV] Motor DIAG: Phase A active (PIN_INHA=%d, CH=%d duty=%d)\n",
-                    PIN_INHA, CH_PWM_A, PWM_DUTY);
+      console.printf("[DRV] Motor DIAG: Phase A active (PIN_INHA=%d duty=%d)\n",
+                    PIN_INHA, PWM_DUTY);
   } else if (phase == 1) {
-    ledcWrite(CH_PWM_A, 0);
-    ledcWrite(CH_PWM_B, PWM_DUTY);
+    ledcWrite(PIN_INHA, 0);
+    ledcWrite(PIN_INHB, PWM_DUTY);
     if (logFlags.drv)
-      console.printf("[DRV] Motor DIAG: Phase B active (PIN_INHB=%d, CH=%d duty=%d)\n",
-                    PIN_INHB, CH_PWM_B, PWM_DUTY);
+      console.printf("[DRV] Motor DIAG: Phase B active (PIN_INHB=%d duty=%d)\n",
+                    PIN_INHB, PWM_DUTY);
   } else {
     if (logFlags.drv) console.println("[DRV] Motor DIAG: All off");
   }
@@ -59,17 +59,15 @@ void rc_motor_setup() {
   pinMode(PIN_INHC, OUTPUT); digitalWrite(PIN_INHC, LOW);
   pinMode(PIN_INLC, OUTPUT); digitalWrite(PIN_INLC, LOW);
 
-  bool setup_a = ledcSetup(CH_PWM_A, PWM_FREQ, PWM_BITS);
-  bool setup_b = ledcSetup(CH_PWM_B, PWM_FREQ, PWM_BITS);
-  ledcAttachPin(PIN_INHA, CH_PWM_A);
-  ledcAttachPin(PIN_INHB, CH_PWM_B);
+  bool setup_a = ledcAttach(PIN_INHA, PWM_FREQ, PWM_BITS);
+  bool setup_b = ledcAttach(PIN_INHB, PWM_FREQ, PWM_BITS);
 
-  console.printf("[DRV] LEDC Setup A: %s, B: %s | Attached A->CH%d, B->CH%d at %u Hz\n",
+  console.printf("[DRV] LEDC Setup A: %s, B: %s | Attached A(pin%d), B(pin%d) at %u Hz\n",
     setup_a ? "OK" : "FAIL", setup_b ? "OK" : "FAIL",
-    CH_PWM_A, CH_PWM_B, PWM_FREQ);
+    PIN_INHA, PIN_INHB, PWM_FREQ);
 
-  ledcWrite(CH_PWM_A, 0);
-  ledcWrite(CH_PWM_B, 0);
+  ledcWrite(PIN_INHA, 0);
+  ledcWrite(PIN_INHB, 0);
 
   motorTestPhase = 0;
   rc_motor_apply_phase(motorTestPhase);

@@ -288,7 +288,7 @@ bool rc_start_panel_sta() {
   captivePortalMode = false;
 
   WiFi.persistent(false);
-  WiFi.setSleep(true);
+  WiFi.setSleep(false);
   WiFi.softAPdisconnect(true);
   WiFi.mode(WIFI_STA);
 

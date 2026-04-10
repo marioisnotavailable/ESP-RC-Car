@@ -222,7 +222,7 @@ bool rc_wifi_connect() {
   }
 
   WiFi.persistent(false);
-  WiFi.setSleep(true);
+  WiFi.setSleep(false);  // Modem-Sleep aus – verhindert ADC-Rauschen durch Radio-Toggling
   WiFi.mode(WIFI_STA);
   rc_apply_wifi_tx_power();
 
@@ -253,11 +253,8 @@ bool rc_wifi_connect() {
           WiFi.SSID().c_str(), WiFi.RSSI(), WiFi.channel(), millis() - t0);
         return true;
       }
-      if (status == WL_CONNECT_FAILED || status == WL_NO_SSID_AVAIL) {
-        const char* reason = (status == WL_CONNECT_FAILED)
-          ? "FAILED - wrong password or auth rejected"
-          : "NO_SSID - network not found (out of range or 5GHz only)";
-        console.printf("[NET] \"%s\": %s | %lums\n", savedNets[i].ssid.c_str(), reason, millis() - t0);
+      if (status == WL_CONNECT_FAILED) {
+        console.printf("[NET] \"%s\": FAILED - wrong password or auth rejected | %lums\n", savedNets[i].ssid.c_str(), millis() - t0);
         return false;
       }
       if (logFlags.net && ((millis() - t0) % 1000 < WIFI_CONNECT_POLL_MS))

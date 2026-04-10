@@ -23,4 +23,4 @@ static constexpr uint8_t PIN_INLC = 11;
 #define CHARGE_RESTART_PIN 47
 
 // ── ADC (battery) ──
-#define ADC_UB_CHANNEL ADC1_CHANNEL_0  // GPIO1
+#define ADC_UB_CHANNEL ADC_CHANNEL_0  // GPIO1

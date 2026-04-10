@@ -28,8 +28,7 @@ static void IRAM_ATTR servoISR() {
     highPhase = false;
     uint32_t lowUs = 20000 - currentUs_timer;
     if (lowUs < 100) lowUs = 100;
-    timerAlarmWrite(servoTimer, lowUs, false);
-    timerAlarmEnable(servoTimer);
+    timerAlarm(servoTimer, lowUs, false, 0);
   } else {
     uint32_t us = targetUs_timer;
     if (us < 500)  us = 500;
@@ -37,8 +36,7 @@ static void IRAM_ATTR servoISR() {
     currentUs_timer = us;
     gpio_set_level((gpio_num_t)LENKUNG_PIN, 1);
     highPhase = true;
-    timerAlarmWrite(servoTimer, currentUs_timer, false);
-    timerAlarmEnable(servoTimer);
+    timerAlarm(servoTimer, currentUs_timer, false, 0);
   }
 }
 
@@ -48,24 +46,22 @@ void rc_steering_init_fallback() {
   digitalWrite(LENKUNG_PIN, LOW);
 
   if (servoTimer) { timerEnd(servoTimer); servoTimer = nullptr; }
-  servoTimer = timerBegin(1, 80, true);
-  timerAttachInterrupt(servoTimer, &servoISR, true);
+  servoTimer = timerBegin(1000000);  // 1 MHz → 1 tick = 1 µs
+  timerAttachInterrupt(servoTimer, &servoISR);
   highPhase = false;
   targetUs_timer = SERVO_MID_US;
-  timerAlarmWrite(servoTimer, 1000, false);
-  timerAlarmEnable(servoTimer);
+  timerAlarm(servoTimer, 1000, false, 0);
   console.println("[SERVO] Fallback: HW-Timer aktiv");
 }
 
 void rc_steering_init_ledc() {
-  ledcDetachPin(LENKUNG_PIN);
-  bool ok = ledcSetup(SERVO_CH, SERVO_FREQ, SERVO_RES_BITS);
+  ledcDetach(LENKUNG_PIN);
+  bool ok = ledcAttach(LENKUNG_PIN, SERVO_FREQ, SERVO_RES_BITS);
   if (!ok) {
     console.println("[SERVO] LEDC Setup FAIL");
     return;
   }
-  ledcAttachPin(LENKUNG_PIN, SERVO_CH);
-  ledcWrite(SERVO_CH, usToDuty(SERVO_MID_US, SERVO_RES_BITS));
+  ledcWrite(LENKUNG_PIN, usToDuty(SERVO_MID_US, SERVO_RES_BITS));
   console.printf("[SERVO] LEDC aktiv (CH=%d, freq=%d, bits=%d, mid=%dus)\n",
     SERVO_CH, SERVO_FREQ, SERVO_RES_BITS, SERVO_MID_US);
 }
@@ -89,7 +85,7 @@ void rc_steering_write_us(int targetUs) {
       targetUs, currentServoUs, g_useTimerFallback ? "timer" : "ledc");
 
   if (!g_useTimerFallback) {
-    ledcWrite(SERVO_CH, usToDuty((uint16_t)currentServoUs, SERVO_RES_BITS));
+    ledcWrite(LENKUNG_PIN, usToDuty((uint16_t)currentServoUs, SERVO_RES_BITS));
   } else {
     targetUs_timer = currentServoUs;
   }

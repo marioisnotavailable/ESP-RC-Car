@@ -322,9 +322,13 @@ window.addEventListener('DOMContentLoaded', () => {
 
   scanBtn.addEventListener('click', async () => {
     try {
-      const list = await apiScan();
+      scanBtn.disabled = true;
+      await apiScan(); // start scan, ignore stale cache
+      await new Promise(res => setTimeout(res, 2500)); // wait for scan to finish
+      const list = await apiScan(); // fetch fresh results
       renderScan(list);
     } catch (e) { console.error(e); }
+    finally { scanBtn.disabled = false; }
   });
 
   scanTable.addEventListener('click', (e) => {
