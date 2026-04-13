@@ -86,17 +86,24 @@ void rc_motor_setup() {
 
   bool setup_a = ledcAttach(PIN_INHA, PWM_FREQ, PWM_BITS);
   bool setup_b = ledcAttach(PIN_INHB, PWM_FREQ, PWM_BITS);
+  bool setup_c = ledcAttach(PIN_INHC, PWM_FREQ, PWM_BITS);
 
-  console.printf("[DRV] LEDC Setup A: %s, B: %s | Attached A(pin%d), B(pin%d) at %u Hz\n",
-    setup_a ? "OK" : "FAIL", setup_b ? "OK" : "FAIL",
-    PIN_INHA, PIN_INHB, PWM_FREQ);
+  console.printf("[DRV] LEDC Setup A:%s B:%s C:%s | pins %d,%d,%d at %u Hz\n",
+    setup_a ? "OK" : "FAIL",
+    setup_b ? "OK" : "FAIL",
+    setup_c ? "OK" : "FAIL",
+    PIN_INHA, PIN_INHB, PIN_INHC, PWM_FREQ);
 
   ledcWrite(PIN_INHA, 0);
   ledcWrite(PIN_INHB, 0);
+  ledcWrite(PIN_INHC, 0);
 
-  motorTestPhase = 0;
-  rc_motor_apply_phase(motorTestPhase);
-  nextMotorDirSwitchMs = millis() + MOTOR_DIR_SWITCH_MS;
+  motorState      = RAMP_UP;
+  motorDir        = FWD;
+  rampStep        = 0;
+  currentCommStep = 0;
+  rc_motor_apply_phase(currentCommStep);
+  nextStepMs = millis() + STEP_SLOW_MS;
 }
 
 void rc_motor_loop() {
