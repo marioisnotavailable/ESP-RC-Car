@@ -108,12 +108,37 @@ void rc_motor_setup() {
 
 void rc_motor_loop() {
   uint32_t now = millis();
-  if (now >= nextMotorDirSwitchMs) {
-    motorTestPhase = (motorTestPhase + 1) % 3;
-    rc_motor_apply_phase(motorTestPhase);
-    nextMotorDirSwitchMs = now + MOTOR_DIR_SWITCH_MS;
-    if (logFlags.drv)
-      console.printf("[DRV] Next test phase in %lu ms\n", (unsigned long)MOTOR_DIR_SWITCH_MS);
+  if (now < nextStepMs) return;
+
+  if (motorState == RAMP_UP) {
+    uint32_t interval = STEP_SLOW_MS
+      - (uint32_t)rampStep * (STEP_SLOW_MS - STEP_FAST_MS) / RAMP_STEPS;
+
+    currentCommStep = nextCommStep(currentCommStep, motorDir);
+    rc_motor_apply_phase(currentCommStep);
+    nextStepMs = now + interval;
+    rampStep++;
+
+    if (rampStep >= RAMP_STEPS) {
+      motorState  = HOLD;
+      holdStartMs = now;
+      if (logFlags.drv)
+        console.printf("[DRV] Ramp done → HOLD dir=%s\n",
+          motorDir == FWD ? "FWD" : "REV");
+    }
+  } else {  // HOLD
+    currentCommStep = nextCommStep(currentCommStep, motorDir);
+    rc_motor_apply_phase(currentCommStep);
+    nextStepMs = now + STEP_FAST_MS;
+
+    if (now - holdStartMs >= MOTOR_HOLD_MS) {
+      motorDir   = (motorDir == FWD) ? REV : FWD;
+      motorState = RAMP_UP;
+      rampStep   = 0;
+      if (logFlags.drv)
+        console.printf("[DRV] Direction → %s, starting ramp\n",
+          motorDir == FWD ? "FWD" : "REV");
+    }
   }
 }
 
