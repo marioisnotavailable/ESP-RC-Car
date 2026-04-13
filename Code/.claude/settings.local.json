@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//home/leon/.claude/plugins/cache/**)",
+      "Read(//home/leon/.claude/**)"
+    ]
+  }
+}
