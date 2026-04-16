@@ -1,0 +1,316 @@
+#include "rc_comms.h"
+#include "esp_wifi.h"
+#include "esp_log.h"
+#include "esp_netif.h"
+#include "esp_event.h"
+#include "esp_http_server.h"
+#include "nvs_flash.h"
+#include "nvs.h"
+#include "lwip/sockets.h"
+#include "cJSON.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/event_groups.h"
+#include <string.h>
+
+static const char *TAG = "comms";
+static volatile uint32_t last_cmd_ms = 0;
+
+/* ── WiFi event handler ─────────────────────────────────────────────────── */
+
+static void wifi_event_handler(void *arg, esp_event_base_t base,
+                               int32_t event_id, void *event_data)
+{
+    if (base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        ESP_LOGW(TAG, "WiFi disconnected, reconnecting...");
+        xEventGroupClearBits(rc_events, WIFI_CONNECTED_BIT);
+        esp_wifi_connect();
+    } else if (base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+        ip_event_got_ip_t *ev = (ip_event_got_ip_t *)event_data;
+        ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&ev->ip_info.ip));
+        xEventGroupSetBits(rc_events, WIFI_CONNECTED_BIT);
+    }
+}
+
+/* ── wifi_connect ───────────────────────────────────────────────────────── */
+
+static bool wifi_connect(void)
+{
+    esp_netif_create_default_wifi_sta();
+
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
+                                               wifi_event_handler, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
+                                               wifi_event_handler, NULL));
+
+    /* Load credentials from NVS namespace "wifi" */
+    nvs_handle_t nvs;
+    esp_err_t err = nvs_open("wifi", NVS_READONLY, &nvs);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "NVS open failed: %s", esp_err_to_name(err));
+        return false;
+    }
+
+    char ssid[64] = {0};
+    char pass[64] = {0};
+    size_t ssid_len = sizeof(ssid);
+    size_t pass_len = sizeof(pass);
+
+    err = nvs_get_str(nvs, "ssid0", ssid, &ssid_len);
+    if (err != ESP_OK || ssid[0] == '\0') {
+        ESP_LOGE(TAG, "No SSID in NVS");
+        nvs_close(nvs);
+        return false;
+    }
+    nvs_get_str(nvs, "pass0", pass, &pass_len); /* password optional */
+    nvs_close(nvs);
+
+    wifi_config_t wifi_cfg = {0};
+    strncpy((char *)wifi_cfg.sta.ssid, ssid, sizeof(wifi_cfg.sta.ssid) - 1);
+    strncpy((char *)wifi_cfg.sta.password, pass, sizeof(wifi_cfg.sta.password) - 1);
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_cfg));
+    ESP_ERROR_CHECK(esp_wifi_start());
+    ESP_ERROR_CHECK(esp_wifi_connect());
+
+    EventBits_t bits = xEventGroupWaitBits(rc_events, WIFI_CONNECTED_BIT,
+                                           pdFALSE, pdTRUE,
+                                           pdMS_TO_TICKS(WIFI_CONNECT_TIMEOUT_MS));
+    if (bits & WIFI_CONNECTED_BIT) {
+        ESP_LOGI(TAG, "WiFi connected");
+        return true;
+    }
+
+    ESP_LOGE(TAG, "WiFi connect timeout");
+    return false;
+}
+
+/* ── UDP discovery task ─────────────────────────────────────────────────── */
+
+static void udp_discovery_task(void *arg)
+{
+    int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (sock < 0) {
+        ESP_LOGE(TAG, "UDP socket create failed");
+        vTaskDelete(NULL);
+        return;
+    }
+
+    struct sockaddr_in bind_addr = {
+        .sin_family      = AF_INET,
+        .sin_addr.s_addr = htonl(INADDR_ANY),
+        .sin_port        = htons(DISCOVERY_PORT),
+    };
+
+    if (bind(sock, (struct sockaddr *)&bind_addr, sizeof(bind_addr)) < 0) {
+        ESP_LOGE(TAG, "UDP bind failed");
+        close(sock);
+        vTaskDelete(NULL);
+        return;
+    }
+
+    ESP_LOGI(TAG, "UDP discovery listening on port %d", DISCOVERY_PORT);
+
+    char rx_buf[64];
+    struct sockaddr_in src_addr;
+    socklen_t src_len = sizeof(src_addr);
+
+    for (;;) {
+        int len = recvfrom(sock, rx_buf, sizeof(rx_buf) - 1, 0,
+                           (struct sockaddr *)&src_addr, &src_len);
+        if (len <= 0) {
+            continue;
+        }
+        rx_buf[len] = '\0';
+
+        if (strcmp(rx_buf, DISCOVERY_QUERY) == 0) {
+            /* Get own IP */
+            esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+            esp_netif_ip_info_t ip_info = {0};
+            if (netif) {
+                esp_netif_get_ip_info(netif, &ip_info);
+            }
+
+            char resp[64];
+            snprintf(resp, sizeof(resp), DISCOVERY_RESP IPSTR,
+                     IP2STR(&ip_info.ip));
+
+            sendto(sock, resp, strlen(resp), 0,
+                   (struct sockaddr *)&src_addr, src_len);
+            ESP_LOGI(TAG, "Discovery response sent: %s", resp);
+        }
+    }
+
+    close(sock);
+    vTaskDelete(NULL);
+}
+
+/* ── WebSocket handler ──────────────────────────────────────────────────── */
+
+static esp_err_t ws_handler(httpd_req_t *req)
+{
+    if (req->method == HTTP_GET) {
+        ESP_LOGI(TAG, "WebSocket handshake");
+        return ESP_OK;
+    }
+
+    /* First recv: get frame size */
+    httpd_ws_frame_t pkt = {
+        .type    = HTTPD_WS_TYPE_TEXT,
+        .payload = NULL,
+    };
+    esp_err_t ret = httpd_ws_recv_frame(req, &pkt, 0);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "ws recv (len probe) failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    if (pkt.len == 0) {
+        return ESP_OK; /* empty frame, ping/pong etc. */
+    }
+
+    /* Allocate and receive payload */
+    uint8_t *buf = calloc(1, pkt.len + 1);
+    if (!buf) {
+        ESP_LOGE(TAG, "ws buf alloc failed");
+        return ESP_ERR_NO_MEM;
+    }
+    pkt.payload = buf;
+
+    ret = httpd_ws_recv_frame(req, &pkt, pkt.len);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "ws recv failed: %s", esp_err_to_name(ret));
+        free(buf);
+        return ret;
+    }
+
+    /* Parse JSON {throttle, steer} */
+    cJSON *root = cJSON_ParseWithLength((char *)buf, pkt.len);
+    if (root) {
+        Cmd cmd = {0};
+        cJSON *t = cJSON_GetObjectItem(root, "throttle");
+        cJSON *s = cJSON_GetObjectItem(root, "steer");
+        if (cJSON_IsNumber(t)) cmd.throttle = (int16_t)t->valuedouble;
+        if (cJSON_IsNumber(s)) cmd.steer    = (int16_t)s->valuedouble;
+
+        xQueueOverwrite(cmd_queue, &cmd);
+        last_cmd_ms = (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
+
+        cJSON_Delete(root);
+    } else {
+        ESP_LOGW(TAG, "ws JSON parse error");
+    }
+
+    free(buf);
+    return ESP_OK;
+}
+
+/* ── Start WebSocket server ─────────────────────────────────────────────── */
+
+static httpd_handle_t start_ws_server(void)
+{
+    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+    config.server_port = WS_PORT;
+
+    httpd_handle_t server = NULL;
+    if (httpd_start(&server, &config) != ESP_OK) {
+        ESP_LOGE(TAG, "httpd_start failed");
+        return NULL;
+    }
+
+    static const httpd_uri_t ws_uri = {
+        .uri          = "/ws",
+        .method       = HTTP_GET,
+        .handler      = ws_handler,
+        .user_ctx     = NULL,
+        .is_websocket = true,
+    };
+    httpd_register_uri_handler(server, &ws_uri);
+
+    ESP_LOGI(TAG, "WebSocket server started on port %d", WS_PORT);
+    return server;
+}
+
+/* ── Broadcast battery percentage to all WS clients ────────────────────── */
+
+static void broadcast_battery(httpd_handle_t server)
+{
+    if (!server) return;
+
+    int pct = 0;
+    xQueuePeek(batt_queue, &pct, 0);
+
+    char json[32];
+    int json_len = snprintf(json, sizeof(json), "{\"batt\":%d}", pct);
+
+    size_t  clients     = 10;           /* max clients to query */
+    int     client_fds[10];
+    esp_err_t err = httpd_get_client_list(server, &clients, client_fds);
+    if (err != ESP_OK) return;
+
+    for (size_t i = 0; i < clients; i++) {
+        httpd_ws_client_info_t info = httpd_ws_get_fd_info(server, client_fds[i]);
+        if (info != HTTPD_WS_CLIENT_WEBSOCKET) continue;
+
+        httpd_ws_frame_t pkt = {
+            .final   = true,
+            .fragmented = false,
+            .type    = HTTPD_WS_TYPE_TEXT,
+            .payload = (uint8_t *)json,
+            .len     = (size_t)json_len,
+        };
+        httpd_ws_send_frame_async(server, client_fds[i], &pkt);
+    }
+}
+
+/* ── Failsafe check ─────────────────────────────────────────────────────── */
+
+static void check_failsafe(void)
+{
+    if (last_cmd_ms == 0) return;
+
+    uint32_t now = (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
+    if ((now - last_cmd_ms) > FAILSAFE_DEFAULT_MS) {
+        Cmd zero = {0};
+        xQueueOverwrite(cmd_queue, &zero);
+        last_cmd_ms = 0; /* suppress repeated triggers until next real cmd */
+        ESP_LOGW(TAG, "Failsafe triggered");
+    }
+}
+
+/* ── comms_task ─────────────────────────────────────────────────────────── */
+
+void comms_task(void *arg)
+{
+    ESP_LOGI(TAG, "comms_task started");
+
+    /* esp_netif and event loop are expected to be initialised in app_main */
+
+    bool connected = wifi_connect();
+
+    if (connected) {
+        xTaskCreate(udp_discovery_task, "udp_disc", 4096, NULL, 5, NULL);
+    } else {
+        ESP_LOGW(TAG, "WiFi not connected – running in AP-less mode");
+    }
+
+    httpd_handle_t server = start_ws_server();
+
+    TickType_t last_batt_tick = xTaskGetTickCount();
+
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(50));
+
+        check_failsafe();
+
+        /* Broadcast battery every ~1 s */
+        TickType_t now = xTaskGetTickCount();
+        if ((now - last_batt_tick) >= pdMS_TO_TICKS(1000)) {
+            last_batt_tick = now;
+            broadcast_battery(server);
+        }
+    }
+}

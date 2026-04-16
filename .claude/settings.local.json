@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(obsidian help *)",
+      "Bash(npm list *)",
+      "Bash(obsidian vaults *)",
+      "Bash(obsidian files *)",
+      "Bash(git *)",
+      "mcp__plugin_claude-mem_mcp-search__get_observations",
+      "Bash(mkdir -p /home/leon/Documents/GitHub/ESP-RC-Car/Esp-RC-Car/Firmware)",
+      "Bash(mkdir -p /home/leon/Documents/GitHub/ESP-RC-Car/Esp-RC-Car/App)",
+      "Bash(mkdir -p /home/leon/Documents/GitHub/ESP-RC-Car/Esp-RC-Car/Hardware)",
+      "Bash(pio run *)",
+      "Bash(python3 -m pip install platformio --user --quiet)",
+      "Bash(python3 -m pip install platformio --user --break-system-packages --quiet)",
+      "Bash(/bin/rm /home/leon/Documents/GitHub/ESP-RC-Car/Code/src/main.cpp)",
+      "Bash(/bin/rm -rf .pio/build/espidf)",
+      "Bash(xargs ls *)",
+      "Bash(/bin/rm -rf /home/leon/Documents/GitHub/ESP-RC-Car/Code/.pio/build/espidf)",
+      "Bash(xargs cat *)",
+      "mcp__plugin_claude-mem_mcp-search__smart_outline"
+    ]
+  }
+}

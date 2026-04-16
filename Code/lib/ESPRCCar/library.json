@@ -1,7 +1,0 @@
-{
-  "name": "ESPRCCar",
-  "version": "1.0.0",
-  "description": "ESP32-S3 RC Car firmware library - modular motor, battery, steering, network & control",
-  "frameworks": "arduino",
-  "platforms": "espressif32"
-}
