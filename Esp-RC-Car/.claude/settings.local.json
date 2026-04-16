@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(idf.py build *)",
+      "Bash(/home/leon/.platformio/packages/framework-espidf/tools/idf.py build *)",
+      "Bash(pio run *)",
+      "Bash(python3)",
+      "Bash(/home/leon/.platformio/penv/bin/pio run *)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\({k:d[k] for k in ['idf_path','build_component_paths','build_components'] if k in d}, indent=2\\)\\)\")",
+      "Bash(git clone *)",
+      "Bash(ls /home/leon/Documents/GitHub/ESP-RC-Car/Code/components/esp_littlefs/src/littlefs/*.c)",
+      "Bash(cmake --version)",
+      "Bash(git *)",
+      "Bash(/bin/rm -rf Code/components/esp_littlefs)",
+      "Bash(~/.platformio/penv/bin/pio run *)",
+      "Bash(ls ~/.espressif/python_env/*/bin/idf.py)",
+      "Bash(ls /opt/esp*)"
+    ]
+  }
+}

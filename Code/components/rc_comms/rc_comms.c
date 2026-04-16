@@ -12,9 +12,59 @@
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
 #include <string.h>
+#include <stdio.h>
 
 static const char *TAG = "comms";
 static volatile uint32_t last_cmd_ms = 0;
+
+/* ── Content-type helper ────────────────────────────────────────────────── */
+
+static const char *content_type_for_path(const char *path)
+{
+    const char *ext = strrchr(path, '.');
+    if (!ext)                          return "application/octet-stream";
+    if (strcmp(ext, ".html") == 0)     return "text/html";
+    if (strcmp(ext, ".js")   == 0)     return "application/javascript";
+    if (strcmp(ext, ".css")  == 0)     return "text/css";
+    if (strcmp(ext, ".ico")  == 0)     return "image/x-icon";
+    if (strcmp(ext, ".json") == 0)     return "application/json";
+    if (strcmp(ext, ".png")  == 0)     return "image/png";
+    return "application/octet-stream";
+}
+
+/* ── Static file handler ────────────────────────────────────────────────── */
+
+static esp_err_t static_file_handler(httpd_req_t *req)
+{
+    /* Build filesystem path: /littlefs + uri, or /littlefs/index.html for "/" */
+    char filepath[128];
+    const char *uri = req->uri;
+    if (strcmp(uri, "/") == 0) {
+        uri = "/index.html";
+    }
+    snprintf(filepath, sizeof(filepath), "/littlefs%s", uri);
+
+    FILE *f = fopen(filepath, "r");
+    if (!f) {
+        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "File not found");
+        return ESP_FAIL;
+    }
+
+    httpd_resp_set_type(req, content_type_for_path(filepath));
+
+    char buf[512];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), f)) > 0) {
+        if (httpd_resp_send_chunk(req, buf, (ssize_t)n) != ESP_OK) {
+            fclose(f);
+            httpd_resp_send_chunk(req, NULL, 0);
+            return ESP_FAIL;
+        }
+    }
+    fclose(f);
+    httpd_resp_send_chunk(req, NULL, 0); /* terminate chunked response */
+    return ESP_OK;
+}
 
 /* ── WiFi event handler ─────────────────────────────────────────────────── */
 
@@ -229,6 +279,15 @@ static httpd_handle_t start_ws_server(void)
         .is_websocket = true,
     };
     httpd_register_uri_handler(server, &ws_uri);
+
+    static const httpd_uri_t file_uri = {
+        .uri      = "/*",
+        .method   = HTTP_GET,
+        .handler  = static_file_handler,
+        .user_ctx = NULL,
+    };
+    httpd_register_uri_handler(server, &file_uri);
+    ESP_LOGI(TAG, "Static file handler registered");
 
     ESP_LOGI(TAG, "WebSocket server started on port %d", WS_PORT);
     return server;
