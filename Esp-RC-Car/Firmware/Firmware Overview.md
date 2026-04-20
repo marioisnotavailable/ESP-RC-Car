@@ -40,7 +40,7 @@ Code/
 ## Flash-Konfiguration
 
 - Flash: 16MB QIO OPI
-- Filesystem: SPIFFS (LittleFS removed)
+- Filesystem: **LittleFS** (Partition-Label `littlefs`, Mount unter `/littlefs`)
 - Partitions: `partitions.csv` (custom)
 
 ## ESP-IDF sdkconfig Highlights
@@ -49,7 +49,9 @@ Code/
 - FreeRTOS: 1000 Hz Tick
 - Watchdog: 10s Timeout
 - WebSocket Support: aktiviert
-- SPIRAM Support: aktiviert
+- SPIRAM: `CONFIG_SPIRAM=y`, **Modus: OCT** (`CONFIG_SPIRAM_MODE_OCT=y`)
+  - Board hat OPI-PSRAM (`board_build.arduino.memory_type = qio_opi`)
+  - QUAD-Modus → ID-Read `0x00ffffff` → `abort()` ⚠️
 - OTA Rollback: aktiviert (`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y`)
 
 ## FreeRTOS Task-Architektur

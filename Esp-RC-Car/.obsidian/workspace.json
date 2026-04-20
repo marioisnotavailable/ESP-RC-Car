@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "Firmware/rc_motor.md",
+                "file": "App/App Overview.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "rc_motor"
+              "title": "App Overview"
             }
           }
         ]
@@ -185,6 +185,9 @@
   },
   "active": "a4134dd5d1151f80",
   "lastOpenFiles": [
+    "Architektur.canvas",
+    "00 Overview.md",
+    "Firmware/rc_motor.md",
     "App/ControllerService.md",
     "App/App Overview.md",
     "Hardware/Motor & Treiber.md",
@@ -194,14 +197,11 @@
     "Firmware/rc_settings.md",
     "Firmware/rc_steering.md",
     "Firmware/rc_websocket.md",
-    "Architektur.canvas",
     "Firmware/Firmware Overview.md",
     "Firmware/drv8323.md",
     "Firmware/rc_motor.md.tmp.74233.1776330115930",
-    "00 Overview.md",
     "Firmware/rc_network.md",
     "Firmware/rc_ota.md",
-    "Firmware/rc_motor.md",
     "Firmware/rc_battery.md",
     "Hardware/PCB.md",
     "Hardware",

@@ -35,7 +35,8 @@ DeviceSettings settings = {
     .adc_corr_factor    = 1.0f,
 };
 
-volatile int battery_percent = 0;
+volatile int   battery_percent = 0;
+volatile float g_vbatt         = 0.0f;
 static adc_oneshot_unit_handle_t adc_handle;
 
 // ── NVS Settings ─────────────────────────────────────────────────────────────
@@ -190,6 +191,8 @@ static int read_battery_percent(void)
     float avg_raw = (float)(sum / samples);
     float v_adc   = (avg_raw / 4095.0f) * 3.1f * settings.adc_corr_factor;
     float v_batt  = v_adc * 3.0f; // voltage divider 1:3
+
+    g_vbatt = v_batt;
 
     float pct = (v_batt - 7.5f) / (8.39f - 7.5f) * 100.0f;
     if (pct < 0.0f)   pct = 0.0f;

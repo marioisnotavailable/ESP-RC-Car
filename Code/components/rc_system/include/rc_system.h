@@ -20,7 +20,8 @@ typedef struct {
 } DeviceSettings;
 
 extern DeviceSettings settings;
-extern volatile int battery_percent;
+extern volatile int   battery_percent;
+extern volatile float g_vbatt;
 
 void rc_settings_load(void);
 void rc_settings_save(void);

@@ -77,6 +77,32 @@ static void console_task(void *arg)
     }
 }
 
+// ── Shared command executor ───────────────────────────────────────────────────
+
+void rc_execute_command(const char *cmd, char *out, size_t out_len)
+{
+    if (!cmd || !out || out_len == 0) return;
+    out[0] = '\0';
+
+    if (strcmp(cmd, "status") == 0) {
+        EventBits_t bits = xEventGroupGetBits(rc_events);
+        snprintf(out, out_len,
+                 "Battery: %d%%  Safe-mode: %s  WiFi: %s\n",
+                 battery_percent,
+                 (bits & SAFE_MODE_BIT)     ? "yes" : "no",
+                 (bits & WIFI_CONNECTED_BIT) ? "yes" : "no");
+    } else if (strcmp(cmd, "reset") == 0) {
+        snprintf(out, out_len, "Resetting...\n");
+        rc_recovery_mark_stable();
+        esp_restart();
+    } else if (strcmp(cmd, "ota") == 0) {
+        snprintf(out, out_len, "Starting OTA check...\n");
+        do_fota();
+    } else {
+        snprintf(out, out_len, "Commands: status, reset, ota\n");
+    }
+}
+
 // ── Background Task ───────────────────────────────────────────────────────────
 
 void bg_task(void *arg)
