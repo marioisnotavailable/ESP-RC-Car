@@ -39,8 +39,8 @@ extern EventGroupHandle_t  rc_events;
 #define PIN_INHC   10
 #define PIN_INLC   11
 
-// Servo (GPIO5 Konflikt behoben → GPIO4)
-#define PIN_SERVO       4
+// Servo (GPIO5 Konflikt behoben → GPIO2)
+#define PIN_SERVO       2
 
 // Batterie ADC
 #define BATT_ADC_CHANNEL  ADC_CHANNEL_0   // GPIO1

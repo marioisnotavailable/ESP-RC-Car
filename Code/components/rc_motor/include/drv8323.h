@@ -2,6 +2,15 @@
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
 #include "esp_err.h"
+#include <stdbool.h>
+
+#define ADR_FAULT_STAT   0x00
+#define ADR_VGS_STAT     0x01
+#define ADR_DRV_CTRL     0x02
+#define ADR_GATE_DRV_HS  0x03
+#define ADR_GATE_DRV_LS  0x04
+#define ADR_OCP_CTRL     0x05
+#define ADR_CSA_CTRL     0x06
 
 typedef struct {
     spi_device_handle_t spi;
