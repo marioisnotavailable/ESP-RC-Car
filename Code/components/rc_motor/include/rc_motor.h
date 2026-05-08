@@ -6,7 +6,7 @@
 #define PWM_BITS              LEDC_TIMER_10_BIT
 #define PWM_DUTY_MAX          1023
 
-#define RAMP_PERIOD_MAX_MS    50
+#define RAMP_PERIOD_MAX_MS   150
 #define RAMP_PERIOD_MIN_MS     5
 #define RAMP_DUTY_START       (PWM_DUTY_MAX / 10)
 #define RAMP_DUTY_STEP         5

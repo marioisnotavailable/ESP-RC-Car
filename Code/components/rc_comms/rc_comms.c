@@ -1,13 +1,13 @@
 /* rc_comms.c – WiFi / WebSocket / UDP-discovery / API / Port-81 WS
  *
  * Port 80  – native-app WebSocket at /ws (JSON {"throttle":X,"steer":Y})
- *           – all /api/* REST endpoints
- *           – captive-portal redirects
- *           – static file handler  /*  (LittleFS)
+ *          – all /api/ ENDPOINTS REST endpoints
+ *          – captive-portal redirects
+ *          – static file handler  (LittleFS)
  *
- * Port 81  – web-UI WebSocket at /  (CMD:xxx → BATT:XX)
+ * Port 81  – web-UI WebSocket at /  (CMD:xxx -> BATT:XX)
  *
- * UDP 49352 – discovery (ESP_RC_DISCOVER → ESP_RC_HERE <ip>)
+ * UDP 49352 – discovery (ESP_RC_DISCOVER -> ESP_RC_HERE <ip>)
  */
 
 #include "rc_comms.h"
@@ -380,18 +380,21 @@ static esp_err_t generate_204_handler(httpd_req_t *req)
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Static file handler  /*
+ * Static file handler
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static esp_err_t static_file_handler(httpd_req_t *req)
 {
     /* Map / → /index.html */
     const char *uri = req->uri;
-    char path[128];
+    char path[512];
     if (strcmp(uri, "/") == 0) {
         strlcpy(path, "/littlefs/index.html", sizeof(path));
     } else {
-        snprintf(path, sizeof(path), "/littlefs%s", uri);
+        if (snprintf(path, sizeof(path), "/littlefs%s", uri) >= sizeof(path)) {
+            // Path was truncated, handle gracefully
+            path[sizeof(path) - 1] = '\0';
+        }
     }
 
     FILE *f = fopen(path, "r");

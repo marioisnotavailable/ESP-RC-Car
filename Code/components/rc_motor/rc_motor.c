@@ -117,6 +117,28 @@ void motor_task(void *arg)
                  PIN_DRV_SCLK, PIN_DRV_MISO, PIN_DRV_MOSI);
     all_off();
 
+#ifdef STEP_TEST
+    if (drv8323_has_fault(&drv)) {
+        ESP_LOGE(TAG, "DRV8323 startup fault: 0x%03X 0x%03X",
+                 drv8323_read_fault1(&drv), drv8323_read_fault2(&drv));
+    }
+    bootstrap_precharge();
+    uint32_t test_duty = PWM_DUTY_MAX / 2;
+    while (1) {
+        for (int s = 0; s < 6; s++) {
+            ESP_LOGI(TAG, "STEP_TEST step=%d INH=%d INL=%d duty=%lu",
+                     s, STEP_INH[s], STEP_INL[s], (unsigned long)test_duty);
+            apply_step(s, test_duty);
+            vTaskDelay(pdMS_TO_TICKS(800));
+            if (drv8323_has_fault(&drv)) {
+                ESP_LOGE(TAG, "FAULT step=%d: 0x%03X 0x%03X",
+                         s, drv8323_read_fault1(&drv), drv8323_read_fault2(&drv));
+                drv8323_clear_faults(&drv);
+            }
+        }
+    }
+#endif
+
     if (drv8323_has_fault(&drv)) {
         ESP_LOGE(TAG, "DRV8323 startup fault: 0x%03X 0x%03X",
                  drv8323_read_fault1(&drv), drv8323_read_fault2(&drv));
@@ -158,8 +180,11 @@ void motor_task(void *arg)
             all_off();
             state_reset(&state);
             state.direction = new_dir;
+            state.step      = 0;
+            state.duty      = PWM_DUTY_MAX / 3;
             last_dir        = new_dir;
-            vTaskDelay(pdMS_TO_TICKS(20));
+            apply_step(0, PWM_DUTY_MAX / 3);
+            vTaskDelay(pdMS_TO_TICKS(500));
         }
 
         uint32_t target_duty = (uint32_t)abs_throttle * PWM_DUTY_MAX / 1000;
@@ -175,10 +200,12 @@ void motor_task(void *arg)
             state.duty = target_duty;
         }
 
-        if (state.period_ms > target_period + RAMP_PERIOD_STEP_MS) {
-            state.period_ms -= RAMP_PERIOD_STEP_MS;
-        } else {
-            state.period_ms = target_period;
+        if (state.duty >= (target_duty * 2) / 3) {
+            if (state.period_ms > target_period + RAMP_PERIOD_STEP_MS) {
+                state.period_ms -= RAMP_PERIOD_STEP_MS;
+            } else {
+                state.period_ms = target_period;
+            }
         }
 
         apply_step(state.step, state.duty);

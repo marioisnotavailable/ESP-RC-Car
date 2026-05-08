@@ -10,6 +10,7 @@
 
 // Uncomment to run drive test (forward/stop/backward/stop loop) instead of normal app
 // #define TEST_DRIVE
+// Step diagnostic: cycles 0..5 manually, 800ms each, 50% duty (define STEP_TEST in build_flags)
 
 static const char *TAG = "main";
 
@@ -28,8 +29,8 @@ static void test_drive_task(void *arg)
 
     while (1) {
         ESP_LOGI(TAG, "TEST: forward");
-        cmd.throttle = 500;
-        for (int i = 0; i < 20; i++) {
+        cmd.throttle = 300;
+        for (int i = 0; i < 50; i++) {
             xQueueOverwrite(cmd_queue, &cmd);
             vTaskDelay(pdMS_TO_TICKS(100));
         }
@@ -40,8 +41,8 @@ static void test_drive_task(void *arg)
         vTaskDelay(pdMS_TO_TICKS(500));
 
         ESP_LOGI(TAG, "TEST: backward");
-        cmd.throttle = -500;
-        for (int i = 0; i < 20; i++) {
+        cmd.throttle = -300;
+        for (int i = 0; i < 50; i++) {
             xQueueOverwrite(cmd_queue, &cmd);
             vTaskDelay(pdMS_TO_TICKS(100));
         }
@@ -70,7 +71,10 @@ void app_main(void) {
     rc_recovery_check();
     rc_settings_load();
 
-#ifdef TEST_DRIVE
+#if defined(STEP_TEST)
+    ESP_LOGI(TAG, "ESP-RC-Car STEP_TEST mode");
+    xTaskCreate(motor_task, "motor", 4096, NULL, 10, NULL);
+#elif defined(TEST_DRIVE)
     ESP_LOGI(TAG, "ESP-RC-Car TEST_DRIVE mode");
     xTaskCreate(motor_task,     "motor",  4096, NULL, 10, NULL);
     xTaskCreate(system_task,    "system", 6144, NULL, 5,  NULL);
