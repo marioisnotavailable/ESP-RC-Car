@@ -9,7 +9,7 @@
 #include "rc_system.h"
 
 // Uncomment to run drive test (forward/stop/backward/stop loop) instead of normal app
-// #define TEST_DRIVE
+#define TEST_DRIVE
 // Step diagnostic: cycles 0..5 manually, 800ms each, 50% duty (define STEP_TEST in build_flags)
 
 static const char *TAG = "main";
@@ -29,8 +29,13 @@ static void test_drive_task(void *arg)
 
     while (1) {
         ESP_LOGI(TAG, "TEST: forward");
-        cmd.throttle = 300;
-        for (int i = 0; i < 50; i++) {
+        for (int16_t t = 100; t <= 600; t += 25) {
+            cmd.throttle = t;
+            xQueueOverwrite(cmd_queue, &cmd);
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
+        cmd.throttle = 600;
+        for (int i = 0; i < 40; i++) {
             xQueueOverwrite(cmd_queue, &cmd);
             vTaskDelay(pdMS_TO_TICKS(100));
         }
@@ -38,11 +43,16 @@ static void test_drive_task(void *arg)
         ESP_LOGI(TAG, "TEST: stop");
         cmd.throttle = 0;
         xQueueOverwrite(cmd_queue, &cmd);
-        vTaskDelay(pdMS_TO_TICKS(500));
+        vTaskDelay(pdMS_TO_TICKS(800));
 
         ESP_LOGI(TAG, "TEST: backward");
-        cmd.throttle = -300;
-        for (int i = 0; i < 50; i++) {
+        for (int16_t t = -100; t >= -600; t -= 25) {
+            cmd.throttle = t;
+            xQueueOverwrite(cmd_queue, &cmd);
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
+        cmd.throttle = -600;
+        for (int i = 0; i < 40; i++) {
             xQueueOverwrite(cmd_queue, &cmd);
             vTaskDelay(pdMS_TO_TICKS(100));
         }
@@ -50,7 +60,7 @@ static void test_drive_task(void *arg)
         ESP_LOGI(TAG, "TEST: stop");
         cmd.throttle = 0;
         xQueueOverwrite(cmd_queue, &cmd);
-        vTaskDelay(pdMS_TO_TICKS(500));
+        vTaskDelay(pdMS_TO_TICKS(800));
     }
 }
 #endif
@@ -68,8 +78,6 @@ void app_main(void) {
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
     rc_common_init();
-    rc_recovery_check();
-    rc_settings_load();
 
 #if defined(STEP_TEST)
     ESP_LOGI(TAG, "ESP-RC-Car STEP_TEST mode");
@@ -77,9 +85,10 @@ void app_main(void) {
 #elif defined(TEST_DRIVE)
     ESP_LOGI(TAG, "ESP-RC-Car TEST_DRIVE mode");
     xTaskCreate(motor_task,     "motor",  4096, NULL, 10, NULL);
-    xTaskCreate(system_task,    "system", 6144, NULL, 5,  NULL);
     xTaskCreate(test_drive_task,"test",   4096, NULL, 3,  NULL);
 #else
+    rc_recovery_check();
+    rc_settings_load();
     ESP_LOGI(TAG, "ESP-RC-Car (ESP-IDF) starting...");
     xTaskCreate(motor_task,  "motor",  4096,  NULL, 10, NULL);
     xTaskCreate(comms_task,  "comms",  8192,  NULL, 7,  NULL);

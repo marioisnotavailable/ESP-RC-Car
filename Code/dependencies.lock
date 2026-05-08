@@ -1,20 +1,17 @@
 dependencies:
   esp_littlefs:
-    component_hash: b8518e5c78412ceaaee21809c122e96da3b9e1341ff9164e88bb7779863bc5f2
-    dependencies:
-    - name: idf
-      version: '>=5.0'
+    dependencies: []
     source:
-      git: https://github.com/joltwallet/esp_littlefs.git
-      path: .
-      type: git
-    version: f838c3bea9c5a89a182332ed672c4d5cf2ddf619
+      path: /home/leon/Documents/GitHub/ESP-RC-Car/Code/components/esp_littlefs
+      type: local
+    version: 1.20.4
   idf:
     source:
       type: idf
-    version: 5.5.0
+    version: 5.1.4
 direct_dependencies:
 - esp_littlefs
-manifest_hash: d1167ada0a0119dd897d08d50fd37df7f7656d3e0c3e3a6b9ba7bda970114a8f
+- idf
+manifest_hash: c14862ca715ced5143e9dda08bbcc0767655a34638df06305f6bfc7268c45540
 target: esp32s3
 version: 2.0.0
