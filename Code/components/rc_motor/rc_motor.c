@@ -21,8 +21,9 @@ static const gpio_num_t PINS[6] = {
 };
 
 // CH index: INH_A=0 INL_A=1 INH_B=2 INL_B=3 INH_C=4 INL_C=5
-static const int STEP_INH[6] = { 0, 0, 2, 2, 4, 4 };
-static const int STEP_INL[6] = { 3, 5, 5, 1, 1, 3 };
+// Motor B/C physically swapped — driver C drives motor B and vice versa
+static const int STEP_INH[6] = { 0, 0, 4, 4, 2, 2 };
+static const int STEP_INL[6] = { 5, 3, 3, 1, 1, 5 };
 
 static void ledc_init(void)
 {
@@ -123,13 +124,13 @@ void motor_task(void *arg)
                  drv8323_read_fault1(&drv), drv8323_read_fault2(&drv));
     }
     bootstrap_precharge();
-    uint32_t test_duty = PWM_DUTY_MAX / 2;
+    uint32_t test_duty = PWM_DUTY_MAX / 10;
     while (1) {
         for (int s = 0; s < 6; s++) {
             ESP_LOGI(TAG, "STEP_TEST step=%d INH=%d INL=%d duty=%lu",
                      s, STEP_INH[s], STEP_INL[s], (unsigned long)test_duty);
             apply_step(s, test_duty);
-            vTaskDelay(pdMS_TO_TICKS(800));
+            vTaskDelay(pdMS_TO_TICKS(3000));
             if (drv8323_has_fault(&drv)) {
                 ESP_LOGE(TAG, "FAULT step=%d: 0x%03X 0x%03X",
                          s, drv8323_read_fault1(&drv), drv8323_read_fault2(&drv));

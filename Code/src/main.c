@@ -27,40 +27,18 @@ static void test_drive_task(void *arg)
 
     Cmd cmd = {.throttle = 0, .steer = 0, .flags = 0};
 
+    ESP_LOGI(TAG, "TEST: slow forward ramp");
+    for (int16_t t = 100; t <= 150; t += 25) {
+        cmd.throttle = t;
+        xQueueOverwrite(cmd_queue, &cmd);
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+
+    ESP_LOGI(TAG, "TEST: holding 15%% forward");
+    cmd.throttle = 150;
     while (1) {
-        ESP_LOGI(TAG, "TEST: forward");
-        for (int16_t t = 100; t <= 600; t += 25) {
-            cmd.throttle = t;
-            xQueueOverwrite(cmd_queue, &cmd);
-            vTaskDelay(pdMS_TO_TICKS(100));
-        }
-        cmd.throttle = 600;
-        for (int i = 0; i < 40; i++) {
-            xQueueOverwrite(cmd_queue, &cmd);
-            vTaskDelay(pdMS_TO_TICKS(100));
-        }
-
-        ESP_LOGI(TAG, "TEST: stop");
-        cmd.throttle = 0;
         xQueueOverwrite(cmd_queue, &cmd);
-        vTaskDelay(pdMS_TO_TICKS(800));
-
-        ESP_LOGI(TAG, "TEST: backward");
-        for (int16_t t = -100; t >= -600; t -= 25) {
-            cmd.throttle = t;
-            xQueueOverwrite(cmd_queue, &cmd);
-            vTaskDelay(pdMS_TO_TICKS(100));
-        }
-        cmd.throttle = -600;
-        for (int i = 0; i < 40; i++) {
-            xQueueOverwrite(cmd_queue, &cmd);
-            vTaskDelay(pdMS_TO_TICKS(100));
-        }
-
-        ESP_LOGI(TAG, "TEST: stop");
-        cmd.throttle = 0;
-        xQueueOverwrite(cmd_queue, &cmd);
-        vTaskDelay(pdMS_TO_TICKS(800));
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 #endif
