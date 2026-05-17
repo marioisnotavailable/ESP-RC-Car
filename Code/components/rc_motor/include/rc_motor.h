@@ -6,11 +6,9 @@
 #define PWM_BITS              LEDC_TIMER_10_BIT
 #define PWM_DUTY_MAX          1023
 
-#define RAMP_PERIOD_MAX_MS    80
-#define RAMP_PERIOD_MIN_MS    8
-#define RAMP_DUTY_START       (PWM_DUTY_MAX / 10)
-#define RAMP_DUTY_STEP        5
-#define RAMP_PERIOD_STEP_MS    1
-#define FAULT_CHECK_STEPS     20
+#define RAMP_START_US    5000   // 5ms start: duty=20% → enough to overcome static friction
+#define RAMP_END_US      2500   // 2.5ms end — slower field, less wheel speed
+#define RAMP_STEP_US      250   // ~22 steps total ramp
+#define FAULT_CHECK_STEPS 50
 
 void motor_task(void *arg);

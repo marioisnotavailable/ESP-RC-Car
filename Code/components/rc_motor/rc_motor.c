@@ -5,6 +5,7 @@
 #include "freertos/queue.h"
 #include "freertos/event_groups.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 
 static const char *TAG = "motor";
 
@@ -20,13 +21,16 @@ static const gpio_num_t PINS[6] = {
     PIN_INHC, PIN_INLC,
 };
 
-// CH index: INH_A=0 INL_A=1 INH_B=2 INL_B=3 INH_C=4 INL_C=5
+// CH: INH_A=0 INL_A=1 INH_B=2 INL_B=3 INH_C=4 INL_C=5
 // Motor B/C physically swapped — driver C drives motor B and vice versa
 static const int STEP_INH[6] = { 0, 0, 4, 4, 2, 2 };
 static const int STEP_INL[6] = { 5, 3, 3, 1, 1, 5 };
 
 static void ledc_init(void)
 {
+    // GPIO3 is a strapping pin — force-reset before LEDC claims it
+    gpio_reset_pin(GPIO_NUM_3);
+
     ledc_timer_config_t timer = {
         .speed_mode      = LEDC_LOW_SPEED_MODE,
         .duty_resolution = PWM_BITS,
@@ -71,24 +75,24 @@ static void bootstrap_precharge(void)
     vTaskDelay(pdMS_TO_TICKS(1));
 }
 
+static void commutation_delay(uint32_t period_us)
+{
+    uint64_t deadline = esp_timer_get_time() + period_us;
+    while (1) {
+        uint64_t now = esp_timer_get_time();
+        if (now >= deadline) break;
+        if (deadline - now >= 2000)
+            vTaskDelay(1);
+        else
+            taskYIELD();
+    }
+}
+
 static void apply_step(int step, uint32_t duty)
 {
     all_off();
     set_duty(CH[STEP_INH[step]], duty);
     set_duty(CH[STEP_INL[step]], PWM_DUTY_MAX);
-}
-
-typedef struct {
-    int      step;
-    int8_t   direction;
-    uint32_t duty;
-    uint32_t period_ms;
-} MotorState;
-
-static void state_reset(MotorState *s)
-{
-    s->duty      = RAMP_DUTY_START;
-    s->period_ms = RAMP_PERIOD_MAX_MS;
 }
 
 void motor_task(void *arg)
@@ -99,16 +103,9 @@ void motor_task(void *arg)
     drv8323_init(&drv, PIN_DRV_CS, PIN_DRV_EN, PIN_DRV_FAULT,
                  PIN_DRV_SCLK, PIN_DRV_MISO, PIN_DRV_MOSI);
     while (1) {
-        ESP_LOGI(TAG, "--- DRV8323 SPI test ---");
-        ESP_LOGI(TAG, "FAULT=%03X VGS=%03X CTRL=%03X HS=%03X LS=%03X OCP=%03X CSA=%03X",
+        ESP_LOGI(TAG, "FAULT=%03X VGS=%03X",
                  drv8323_read_reg(&drv, ADR_FAULT_STAT),
-                 drv8323_read_reg(&drv, ADR_VGS_STAT),
-                 drv8323_read_reg(&drv, ADR_DRV_CTRL),
-                 drv8323_read_reg(&drv, ADR_GATE_DRV_HS),
-                 drv8323_read_reg(&drv, ADR_GATE_DRV_LS),
-                 drv8323_read_reg(&drv, ADR_OCP_CTRL),
-                 drv8323_read_reg(&drv, ADR_CSA_CTRL));
-        ESP_LOGI(TAG, "FAULT pin: %d", gpio_get_level(PIN_DRV_FAULT));
+                 drv8323_read_reg(&drv, ADR_VGS_STAT));
         vTaskDelay(pdMS_TO_TICKS(2000));
     }
 #endif
@@ -119,21 +116,16 @@ void motor_task(void *arg)
     all_off();
 
 #ifdef STEP_TEST
-    if (drv8323_has_fault(&drv)) {
-        ESP_LOGE(TAG, "DRV8323 startup fault: 0x%03X 0x%03X",
-                 drv8323_read_fault1(&drv), drv8323_read_fault2(&drv));
-    }
     bootstrap_precharge();
     uint32_t test_duty = PWM_DUTY_MAX / 10;
     while (1) {
         for (int s = 0; s < 6; s++) {
-            ESP_LOGI(TAG, "STEP_TEST step=%d INH=%d INL=%d duty=%lu",
-                     s, STEP_INH[s], STEP_INL[s], (unsigned long)test_duty);
+            ESP_LOGI(TAG, "STEP %d  INH=%d INL=%d", s, STEP_INH[s], STEP_INL[s]);
             apply_step(s, test_duty);
             vTaskDelay(pdMS_TO_TICKS(3000));
             if (drv8323_has_fault(&drv)) {
-                ESP_LOGE(TAG, "FAULT step=%d: 0x%03X 0x%03X",
-                         s, drv8323_read_fault1(&drv), drv8323_read_fault2(&drv));
+                ESP_LOGE(TAG, "FAULT step=%d: 0x%03X 0x%03X", s,
+                         drv8323_read_fault1(&drv), drv8323_read_fault2(&drv));
                 drv8323_clear_faults(&drv);
             }
         }
@@ -141,7 +133,7 @@ void motor_task(void *arg)
 #endif
 
     if (drv8323_has_fault(&drv)) {
-        ESP_LOGE(TAG, "DRV8323 startup fault: 0x%03X 0x%03X",
+        ESP_LOGE(TAG, "Startup fault: 0x%03X 0x%03X",
                  drv8323_read_fault1(&drv), drv8323_read_fault2(&drv));
         vTaskDelete(NULL);
         return;
@@ -149,12 +141,13 @@ void motor_task(void *arg)
 
     bootstrap_precharge();
 
-    MotorState state = { .step = 0, .direction = 1 };
-    state_reset(&state);
-
-    Cmd     cmd           = { 0 };
-    int     fault_counter = 0;
-    int8_t  last_dir      = 0;
+    int      step          = 0;
+    int8_t   direction     = 1;
+    int8_t   last_dir      = 0;
+    uint32_t duty          = 0;
+    uint32_t period_us     = RAMP_START_US;
+    int      fault_counter = 0;
+    Cmd      cmd           = { 0 };
 
     while (1) {
         xQueueReceive(cmd_queue, &cmd, 0);
@@ -170,62 +163,57 @@ void motor_task(void *arg)
 
         if (throttle == 0) {
             all_off();
-            state_reset(&state);
-            last_dir = 0;
+            period_us = RAMP_START_US;
+            last_dir  = 0;
+            step      = 0;
             vTaskDelay(pdMS_TO_TICKS(10));
             continue;
         }
 
         int8_t new_dir = throttle > 0 ? 1 : -1;
+
         if (new_dir != last_dir) {
             all_off();
-            state_reset(&state);
-            state.direction = new_dir;
-            state.step      = 0;
-            state.duty      = PWM_DUTY_MAX / 3;
-            last_dir        = new_dir;
-            apply_step(0, PWM_DUTY_MAX / 3);
-            vTaskDelay(pdMS_TO_TICKS(500));
+            direction = new_dir;
+            last_dir  = new_dir;
+            period_us = RAMP_START_US;
+            apply_step(0, PWM_DUTY_MAX * 4 / 10);
+            vTaskDelay(pdMS_TO_TICKS(800));
+            step = 0;
         }
 
+        // Proportional formula: duty = target × (RAMP_END / period)
+        // At RAMP_START=5000: duty=10.5% → T_motor=5145µs > 5000µs, field leads ✓
+        // At RAMP_END=1500:   duty=35%   → T_motor=1802µs > 1500µs, field leads ✓
         uint32_t target_duty = (uint32_t)abs_throttle * PWM_DUTY_MAX / 1000;
-        if (target_duty < RAMP_DUTY_START) target_duty = RAMP_DUTY_START;
+        if (target_duty < PWM_DUTY_MAX * 60 / 100) target_duty = PWM_DUTY_MAX * 60 / 100;
 
-        uint32_t target_period = RAMP_PERIOD_MIN_MS +
-            (uint32_t)(RAMP_PERIOD_MAX_MS - RAMP_PERIOD_MIN_MS) * (1000 - abs_throttle) / 1000;
-
-        if (state.duty < target_duty) {
-            state.duty += RAMP_DUTY_STEP;
-            if (state.duty > target_duty) state.duty = target_duty;
+        if (period_us > RAMP_END_US) {
+            duty = target_duty * RAMP_END_US / period_us;
         } else {
-            state.duty = target_duty;
+            duty = target_duty;
         }
 
-        if (state.duty >= (target_duty * 2) / 3) {
-            if (state.period_ms > target_period + RAMP_PERIOD_STEP_MS) {
-                state.period_ms -= RAMP_PERIOD_STEP_MS;
-            } else {
-                state.period_ms = target_period;
-            }
+        apply_step(step, duty);
+        step = (step + direction + 6) % 6;
+
+        commutation_delay(period_us);
+
+        if (period_us > RAMP_END_US) {
+            period_us -= RAMP_STEP_US;
+            if (period_us < RAMP_END_US) period_us = RAMP_END_US;
         }
-
-        apply_step(state.step, state.duty);
-        state.step = (state.step + state.direction + 6) % 6;
-
-        vTaskDelay(pdMS_TO_TICKS(state.period_ms));
 
         if (++fault_counter >= FAULT_CHECK_STEPS) {
             fault_counter = 0;
             if (drv8323_has_fault(&drv)) {
-                ESP_LOGE(TAG, "DRV8323 fault: 0x%03X 0x%03X",
+                ESP_LOGE(TAG, "Fault: 0x%03X 0x%03X",
                          drv8323_read_fault1(&drv), drv8323_read_fault2(&drv));
                 all_off();
-                vTaskDelay(pdMS_TO_TICKS(500));
+                vTaskDelay(pdMS_TO_TICKS(200));
                 drv8323_clear_faults(&drv);
                 bootstrap_precharge();
-                state_reset(&state);
-                last_dir     = 0;
-                cmd.throttle = 0;
+                period_us = RAMP_START_US;
             }
         }
     }
