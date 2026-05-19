@@ -860,6 +860,7 @@ static httpd_handle_t start_ws81_server(void)
     cfg.ctrl_port        = 32769;
     cfg.max_uri_handlers = 4;
     cfg.max_open_sockets = 3;
+    cfg.lru_purge_enable = true;
 
     httpd_handle_t srv = NULL;
     if (httpd_start(&srv, &cfg) != ESP_OK) {
@@ -889,6 +890,7 @@ static httpd_handle_t start_ws_server(void)
     cfg.server_port      = WS_PORT;
     cfg.max_uri_handlers = 24;
     cfg.max_open_sockets = 5;
+    cfg.lru_purge_enable = true;
     cfg.uri_match_fn     = httpd_uri_match_wildcard;
 
     httpd_handle_t srv = NULL;

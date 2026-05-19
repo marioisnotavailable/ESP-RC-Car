@@ -10,7 +10,7 @@
 #include "rc_system.h"
 
 // Uncomment to run drive test (forward/stop/backward/stop loop) instead of normal app
-#define TEST_DRIVE
+// #define TEST_DRIVE
 // Step diagnostic: cycles 0..5 manually, 800ms each, 50% duty (define STEP_TEST in build_flags)
 
 static const char *TAG = "main";
