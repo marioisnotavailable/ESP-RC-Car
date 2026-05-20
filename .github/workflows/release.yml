@@ -23,8 +23,9 @@ jobs:
 
       - name: Rename binaries
         run: |
-          cp Code/build/Code.bin Code/build/esp-rc-car.bin
-          cp Code/build/littlefs.bin Code/build/esp-rc-car-littlefs.bin
+          sudo cp Code/build/Code.bin Code/build/esp-rc-car.bin
+          sudo cp Code/build/littlefs.bin Code/build/esp-rc-car-littlefs.bin
+          sudo chown $USER Code/build/esp-rc-car.bin Code/build/esp-rc-car-littlefs.bin
 
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
