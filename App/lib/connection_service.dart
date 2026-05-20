@@ -22,6 +22,7 @@ class ConnectionService extends ChangeNotifier {
   Timer? _reconnectTimer;
   Completer<void>? _scanCompleter;
   int? _batteryPercent;
+  int _reconnectAttempts = 0;
 
   // --- Constants ---
   static const int _discPort = 49352;
@@ -236,6 +237,7 @@ class ConnectionService extends ChangeNotifier {
     DiscoveryMethod method,
   ) async {
     _discoveryMethod = method;
+    _reconnectAttempts = 0;
     if (_lastSuccessfulUrl != url) {
       _lastSuccessfulUrl = url;
       await _saveUrl(url);
@@ -272,7 +274,9 @@ class ConnectionService extends ChangeNotifier {
         return;
       }
       _setBatteryPercent(percent);
+      return;
     }
+    debugPrint('[WS] Unhandled message: $msg');
   }
 
   void _setBatteryPercent(int value) {
@@ -303,7 +307,11 @@ class ConnectionService extends ChangeNotifier {
         : _wsUrl;
     if (retryUrl.trim().isEmpty) return;
 
-    _reconnectTimer = Timer(const Duration(seconds: 3), () {
+    // Exponential backoff: 2s, 4s, 8s, 16s, capped at 30s.
+    final delaySec = (1 << _reconnectAttempts.clamp(1, 5)).clamp(2, 30);
+    _reconnectAttempts++;
+
+    _reconnectTimer = Timer(Duration(seconds: delaySec), () {
       if (_status == ConnectionStatus.connected) return;
       connect(retryUrl, reason: DiscoveryMethod.lastKnown);
     });

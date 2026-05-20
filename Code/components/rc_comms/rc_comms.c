@@ -127,6 +127,13 @@ static void on_sta_got_ip(void *arg, esp_event_base_t base,
     xEventGroupSetBits(rc_events, WIFI_CONNECTED_BIT);
 }
 
+static void on_sta_disconnected(void *arg, esp_event_base_t base,
+                                int32_t id, void *data)
+{
+    xEventGroupClearBits(rc_events, WIFI_CONNECTED_BIT);
+}
+
+/* Caller must have set wifi mode and called esp_wifi_start() beforehand. */
 static bool wifi_connect(const char *ssid, const char *pass)
 {
     xEventGroupClearBits(rc_events, WIFI_CONNECTED_BIT);
@@ -135,9 +142,8 @@ static bool wifi_connect(const char *ssid, const char *pass)
     strlcpy((char *)cfg.sta.ssid,     ssid, sizeof(cfg.sta.ssid));
     strlcpy((char *)cfg.sta.password, pass, sizeof(cfg.sta.password));
 
-    esp_wifi_set_mode(WIFI_MODE_STA);
     esp_wifi_set_config(WIFI_IF_STA, &cfg);
-    esp_wifi_start();
+    esp_wifi_disconnect();
     esp_wifi_connect();
 
     EventBits_t bits = xEventGroupWaitBits(rc_events, WIFI_CONNECTED_BIT,
@@ -146,6 +152,8 @@ static bool wifi_connect(const char *ssid, const char *pass)
     return (bits & WIFI_CONNECTED_BIT) != 0;
 }
 
+/* Switches mode to APSTA and configures the AP interface.
+ * Caller must have called esp_wifi_start() beforehand. */
 static void wifi_start_ap(const char *ssid)
 {
     wifi_config_t cfg = {0};
@@ -156,7 +164,6 @@ static void wifi_start_ap(const char *ssid)
 
     esp_wifi_set_mode(WIFI_MODE_APSTA);
     esp_wifi_set_config(WIFI_IF_AP, &cfg);
-    esp_wifi_start();
     ESP_LOGI(TAG, "AP started: %s", ssid);
 }
 
@@ -263,7 +270,7 @@ static void udp_discovery_task(void *arg)
         get_own_ip(ip_str, sizeof(ip_str));
 
         char resp[64];
-        snprintf(resp, sizeof(resp), DISCOVERY_RESP "%s", ip_str);
+        snprintf(resp, sizeof(resp), DISCOVERY_RESP "ws://%s:81/", ip_str);
 
         if (ready > 0 && FD_ISSET(sock, &fds)) {
             struct sockaddr_in src;
@@ -288,6 +295,8 @@ static void udp_discovery_task(void *arg)
  * Port-80 WebSocket handler  (/ws)  – native app
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+static TickType_t s_last_cmd_tick = 0;
+
 static esp_err_t ws_handler(httpd_req_t *req)
 {
     if (req->method == HTTP_GET) {
@@ -308,6 +317,7 @@ static esp_err_t ws_handler(httpd_req_t *req)
 
     Cmd cmd = { .throttle = throttle, .steer = steer, .flags = 0 };
     xQueueOverwrite(cmd_queue, &cmd);
+    s_last_cmd_tick = xTaskGetTickCount();
 
     return ESP_OK;
 }
@@ -347,8 +357,6 @@ static void broadcast_battery(httpd_handle_t server)
 /* ═══════════════════════════════════════════════════════════════════════════
  * Failsafe check
  * ═══════════════════════════════════════════════════════════════════════════ */
-
-static TickType_t s_last_cmd_tick = 0;
 
 static void check_failsafe(void)
 {
@@ -438,6 +446,37 @@ typedef struct {
     char     pass[NVS_MAX_NETS][64];
     uint32_t last[NVS_MAX_NETS];
 } WifiList;
+
+/* Monotonic counter persisted in wl.last[] — higher = more recently used. */
+static uint32_t s_use_counter = 0;
+
+static uint32_t wifi_list_max_last(const WifiList *wl)
+{
+    uint32_t m = 0;
+    for (int i = 0; i < wl->cnt; i++) if (wl->last[i] > m) m = wl->last[i];
+    return m;
+}
+
+/* Insertion sort by last[] descending. Max 5 entries → trivial cost. */
+static void wifi_list_sort_by_last_desc(WifiList *wl)
+{
+    for (int i = 1; i < wl->cnt; i++) {
+        for (int j = i; j > 0 && wl->last[j - 1] < wl->last[j]; j--) {
+            char     tmp_ssid[64];
+            char     tmp_pass[64];
+            uint32_t tmp_last;
+            memcpy(tmp_ssid, wl->ssid[j], sizeof(tmp_ssid));
+            memcpy(tmp_pass, wl->pass[j], sizeof(tmp_pass));
+            tmp_last = wl->last[j];
+            memcpy(wl->ssid[j], wl->ssid[j - 1], sizeof(tmp_ssid));
+            memcpy(wl->pass[j], wl->pass[j - 1], sizeof(tmp_pass));
+            wl->last[j] = wl->last[j - 1];
+            memcpy(wl->ssid[j - 1], tmp_ssid, sizeof(tmp_ssid));
+            memcpy(wl->pass[j - 1], tmp_pass, sizeof(tmp_pass));
+            wl->last[j - 1] = tmp_last;
+        }
+    }
+}
 
 static esp_err_t nvs_load_wifi_list(WifiList *wl)
 {
@@ -818,6 +857,16 @@ static esp_err_t ws81_handler(httpd_req_t *req)
             esp_restart();
         }
         /* Other CMD: messages are silently ignored */
+        return ESP_OK;
+    }
+
+    /* CSV control frame from native app: "throttle,steer,flags" */
+    int16_t throttle = 0, steer = 0, flags = 0;
+    int parsed = sscanf(text, "%hd,%hd,%hd", &throttle, &steer, &flags);
+    if (parsed >= 2) {
+        Cmd cmd = { .throttle = throttle, .steer = steer, .flags = (uint8_t)flags };
+        xQueueOverwrite(cmd_queue, &cmd);
+        s_last_cmd_tick = xTaskGetTickCount();
     }
 
     return ESP_OK;
@@ -1028,6 +1077,43 @@ static httpd_handle_t start_ws_server(void)
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ * wifi_retry_task — runs in background while AP mode is active.
+ * Periodically retries saved STA networks; on success updates last-used
+ * counter so the most-recent network wins next boot. APSTA mode is kept
+ * so any client currently on the AP stays connected.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+#define WIFI_RETRY_INTERVAL_MS 30000
+
+static void wifi_retry_task(void *arg)
+{
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(WIFI_RETRY_INTERVAL_MS));
+
+        if (xEventGroupGetBits(rc_events) & WIFI_CONNECTED_BIT) {
+            continue;
+        }
+
+        WifiList wl;
+        if (nvs_load_wifi_list(&wl) != ESP_OK || wl.cnt == 0) {
+            continue;
+        }
+
+        wifi_list_sort_by_last_desc(&wl);
+        for (int i = 0; i < wl.cnt; i++) {
+            ESP_LOGI(TAG, "Retry SSID: %s", wl.ssid[i]);
+            if (wifi_connect(wl.ssid[i], wl.pass[i])) {
+                s_use_counter = wifi_list_max_last(&wl) + 1;
+                wl.last[i] = s_use_counter;
+                nvs_save_wifi_list(&wl);
+                ESP_LOGI(TAG, "Joined STA network: %s", wl.ssid[i]);
+                break;
+            }
+        }
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  * comms_task
  * ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -1052,14 +1138,32 @@ void comms_task(void *arg)
 
     esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
         on_sta_got_ip, NULL);
+    esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED,
+        on_sta_disconnected, NULL);
+
+    /* Start radio in STA mode before any connect attempt. */
+    esp_wifi_set_mode(WIFI_MODE_STA);
+    esp_wifi_start();
+
     WifiList wl;
-    bool connected = false;
+    bool connected     = false;
+    int  connected_idx = -1;
 
     if (nvs_load_wifi_list(&wl) == ESP_OK && wl.cnt > 0) {
+        /* Sort by most-recently-used so good networks are tried first. */
+        wifi_list_sort_by_last_desc(&wl);
         for (int i = 0; i < wl.cnt && !connected; i++) {
-            ESP_LOGI(TAG, "Trying SSID: %s", wl.ssid[i]);
+            ESP_LOGI(TAG, "Trying SSID: %s (last=%lu)",
+                     wl.ssid[i], (unsigned long)wl.last[i]);
             connected = wifi_connect(wl.ssid[i], wl.pass[i]);
+            if (connected) connected_idx = i;
         }
+    }
+
+    if (connected && connected_idx >= 0) {
+        s_use_counter = wifi_list_max_last(&wl) + 1;
+        wl.last[connected_idx] = s_use_counter;
+        nvs_save_wifi_list(&wl);
     }
 
     /* ── Fall back to AP mode ── */
@@ -1068,6 +1172,7 @@ void comms_task(void *arg)
         snprintf(ap_ssid, sizeof(ap_ssid), "%sCAR", settings.ap_prefix);
         wifi_start_ap(ap_ssid);
         xTaskCreate(dns_task, "dns", 4096, NULL, 5, NULL);
+        xTaskCreate(wifi_retry_task, "wifi_retry", 4096, NULL, 4, NULL);
     }
 
     /* ── Set TX power ── */

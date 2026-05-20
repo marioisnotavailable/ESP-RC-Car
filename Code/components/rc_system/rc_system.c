@@ -250,13 +250,6 @@ void system_task(void *arg)
 {
     adc_init();
 
-    EventBits_t bits = xEventGroupGetBits(rc_events);
-    if (!(bits & SAFE_MODE_BIT)) {
-        steering_init();
-    } else {
-        ESP_LOGW(TAG, "SAFE_MODE active — steering disabled");
-    }
-
     esp_task_wdt_add(NULL);
 
     TickType_t stable_start  = xTaskGetTickCount();
@@ -265,20 +258,9 @@ void system_task(void *arg)
     for (;;) {
         esp_task_wdt_reset();
 
-        TickType_t now_ticks = xTaskGetTickCount();
-        uint32_t   now_ms    = (uint32_t)(now_ticks * portTICK_PERIOD_MS);
-
         int pct = read_battery_percent();
         battery_percent = pct;
         xQueueOverwrite(batt_queue, &pct);
-
-        bits = xEventGroupGetBits(rc_events);
-        if (!(bits & SAFE_MODE_BIT)) {
-            Cmd cmd = {0};
-            if (xQueuePeek(cmd_queue, &cmd, 0) == pdTRUE) {
-                steering_apply(cmd.steer);
-            }
-        }
 
         uint32_t stable_ms = (uint32_t)((xTaskGetTickCount() - stable_start) * portTICK_PERIOD_MS);
         if (!marked_stable && stable_ms > 30000) {
@@ -287,5 +269,27 @@ void system_task(void *arg)
         }
 
         vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+// ── Steering Task ─────────────────────────────────────────────────────────────
+// Decoupled from system_task so 1 s ADC oversampling does not stall the servo.
+void steering_task(void *arg)
+{
+    EventBits_t bits = xEventGroupGetBits(rc_events);
+    if (bits & SAFE_MODE_BIT) {
+        ESP_LOGW(TAG, "SAFE_MODE active — steering task exiting");
+        vTaskDelete(NULL);
+        return;
+    }
+
+    steering_init();
+
+    for (;;) {
+        Cmd cmd = {0};
+        if (xQueuePeek(cmd_queue, &cmd, 0) == pdTRUE) {
+            steering_apply(cmd.steer);
+        }
+        vTaskDelay(pdMS_TO_TICKS(20)); // 50 Hz update rate matches app
     }
 }

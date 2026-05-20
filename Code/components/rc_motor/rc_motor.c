@@ -150,7 +150,7 @@ void motor_task(void *arg)
     Cmd      cmd           = { 0 };
 
     while (1) {
-        xQueueReceive(cmd_queue, &cmd, 0);
+        xQueuePeek(cmd_queue, &cmd, 0);
 
         if (xEventGroupGetBits(rc_events) & SAFE_MODE_BIT) {
             all_off();
@@ -182,13 +182,13 @@ void motor_task(void *arg)
             step = 0;
         }
 
-        // Proportional formula: duty = target × (RAMP_END / period)
-        // At RAMP_START=5000: duty=10.5% → T_motor=5145µs > 5000µs, field leads ✓
-        // At RAMP_END=1500:   duty=35%   → T_motor=1802µs > 1500µs, field leads ✓
+        // Proportional duty: scaled by throttle. Floor only applied during ramp-up
+        // so the field can keep rotating before back-EMF stabilises.
         uint32_t target_duty = (uint32_t)abs_throttle * PWM_DUTY_MAX / 1000;
-        if (target_duty < PWM_DUTY_MAX * 60 / 100) target_duty = PWM_DUTY_MAX * 60 / 100;
 
         if (period_us > RAMP_END_US) {
+            uint32_t ramp_floor = PWM_DUTY_MAX * 20 / 100;
+            if (target_duty < ramp_floor) target_duty = ramp_floor;
             duty = target_duty * RAMP_END_US / period_us;
         } else {
             duty = target_duty;

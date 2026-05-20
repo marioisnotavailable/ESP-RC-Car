@@ -52,6 +52,17 @@ class _ControllerPageState extends State<ControllerPage> {
   final GlobalKey _devPanelKey = GlobalKey();
   double _devPanelHeight = 0;
 
+  void _toggleDevPanel() {
+    setState(() => _showDevPanel = !_showDevPanel);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final height = _devPanelKey.currentContext?.size?.height ?? 0;
+      if ((height - _devPanelHeight).abs() > 0.5) {
+        setState(() => _devPanelHeight = height);
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
@@ -60,15 +71,6 @@ class _ControllerPageState extends State<ControllerPage> {
     final knobSize = isSmallScreen ? 100.0 : 120.0;
 
     final controller = Provider.of<ControllerService>(context);
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final renderBox = _devPanelKey.currentContext?.size;
-      final height = renderBox?.height ?? 0;
-      if ((height - _devPanelHeight).abs() > 0.5) {
-        setState(() => _devPanelHeight = height);
-      }
-    });
 
     final topOffset = _showDevPanel ? (_devPanelHeight + 16) : 0.0;
 
@@ -152,8 +154,7 @@ class _ControllerPageState extends State<ControllerPage> {
                 child: DevPanel(
                   key: _devPanelKey,
                   isExpanded: _showDevPanel,
-                  onToggle: () =>
-                      setState(() => _showDevPanel = !_showDevPanel),
+                  onToggle: _toggleDevPanel,
                 ),
               ),
               Positioned(

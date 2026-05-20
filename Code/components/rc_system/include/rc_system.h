@@ -28,3 +28,4 @@ void rc_settings_save(void);
 void rc_recovery_check(void);
 void rc_recovery_mark_stable(void);
 void system_task(void *arg);
+void steering_task(void *arg);

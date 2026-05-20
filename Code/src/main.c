@@ -63,10 +63,11 @@ void app_main(void) {
     rc_recovery_check();
     rc_settings_load();
     ESP_LOGI(TAG, "ESP-RC-Car (ESP-IDF) starting...");
-    xTaskCreate(motor_task,  "motor",  4096,  NULL, 10, NULL);
-    xTaskCreate(comms_task,  "comms",  8192,  NULL, 7,  NULL);
-    xTaskCreate(system_task, "system", 6144,  NULL, 5,  NULL);
-    xTaskCreate(bg_task,     "bg",     6144,  NULL, 2,  NULL);
+    xTaskCreate(motor_task,    "motor",    4096, NULL, 10, NULL);
+    xTaskCreate(steering_task, "steering", 3072, NULL, 8,  NULL);
+    xTaskCreate(comms_task,    "comms",    8192, NULL, 7,  NULL);
+    xTaskCreate(system_task,   "system",   6144, NULL, 5,  NULL);
+    xTaskCreate(bg_task,       "bg",       6144, NULL, 2,  NULL);
 #endif
 
     vTaskDelete(NULL);
