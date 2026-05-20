@@ -16,7 +16,7 @@ jobs:
       - name: Build firmware with ESP-IDF
         uses: espressif/esp-idf-ci-action@v1
         with:
-          esp_idf_version: v5.1.4
+          esp_idf_version: v5.5
           target: esp32s3
           path: Code
           command: idf.py -DPROJECT_VER="${{ github.event.release.tag_name }}" build
