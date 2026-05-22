@@ -938,8 +938,10 @@ static httpd_handle_t start_ws_server(void)
     httpd_config_t cfg   = HTTPD_DEFAULT_CONFIG();
     cfg.server_port      = WS_PORT;
     cfg.max_uri_handlers = 24;
-    cfg.max_open_sockets = 5;
+    cfg.max_open_sockets = 7;
     cfg.lru_purge_enable = true;
+    cfg.recv_wait_timeout = 3;   /* seconds — kill idle Android captive probes fast */
+    cfg.send_wait_timeout = 3;
     cfg.uri_match_fn     = httpd_uri_match_wildcard;
 
     httpd_handle_t srv = NULL;
@@ -961,14 +963,14 @@ static httpd_handle_t start_ws_server(void)
     static const httpd_uri_t gen204 = {
         .uri     = "/generate_204",
         .method  = HTTP_GET,
-        .handler = generate_204_handler,
+        .handler = redirect_handler,
     };
     httpd_register_uri_handler(srv, &gen204);
 
     static const httpd_uri_t gen204b = {
         .uri     = "/gen_204",
         .method  = HTTP_GET,
-        .handler = generate_204_handler,
+        .handler = redirect_handler,
     };
     httpd_register_uri_handler(srv, &gen204b);
 
@@ -1090,7 +1092,12 @@ static void wifi_retry_task(void *arg)
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(WIFI_RETRY_INTERVAL_MS));
 
-        if (xEventGroupGetBits(rc_events) & WIFI_CONNECTED_BIT) {
+        EventBits_t bits = xEventGroupGetBits(rc_events);
+        if (bits & WIFI_CONNECTED_BIT) {
+            continue;
+        }
+        if (bits & SAFE_MODE_BIT) {
+            /* Forced AP after rapid resets — do not join any STA. */
             continue;
         }
 
@@ -1149,7 +1156,14 @@ void comms_task(void *arg)
     bool connected     = false;
     int  connected_idx = -1;
 
-    if (nvs_load_wifi_list(&wl) == ESP_OK && wl.cnt > 0) {
+    /* Force AP mode after rapid resets — rc_recovery_check() sets SAFE_MODE_BIT
+     * when crash_cnt >= 3, so user can reconfigure without joining any STA. */
+    bool force_ap = (xEventGroupGetBits(rc_events) & SAFE_MODE_BIT) != 0;
+    if (force_ap) {
+        ESP_LOGW(TAG, "SAFE_MODE active — skipping STA list, going straight to AP");
+    }
+
+    if (!force_ap && nvs_load_wifi_list(&wl) == ESP_OK && wl.cnt > 0) {
         /* Sort by most-recently-used so good networks are tried first. */
         wifi_list_sort_by_last_desc(&wl);
         for (int i = 0; i < wl.cnt && !connected; i++) {

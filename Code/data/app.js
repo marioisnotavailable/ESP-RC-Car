@@ -188,13 +188,30 @@ function setTerminalState(connected) {
   termStateEl.classList.toggle('bad', !connected);
 }
 
-function sendTerminalCommand(cmd) {
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
-    appendTerminal('[TERM] WebSocket not connected\n');
-    return false;
+const HTTP_CMD_ENDPOINTS = {
+  reboot: '/api/reboot',
+};
+
+async function sendTerminalCommand(cmd) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(`CMD:${cmd}`);
+    return true;
   }
-  ws.send(`CMD:${cmd}`);
-  return true;
+  // HTTP fallback for restricted contexts (Android captive WebView blocks ws://)
+  const endpoint = HTTP_CMD_ENDPOINTS[cmd];
+  if (endpoint) {
+    try {
+      const r = await fetch(endpoint, { method: 'POST', cache: 'no-store' });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      appendTerminal(`[TERM] ${cmd} sent via HTTP\n`);
+      return true;
+    } catch (e) {
+      appendTerminal(`[TERM] HTTP fallback failed: ${e.message}\n`);
+      return false;
+    }
+  }
+  appendTerminal('[TERM] WebSocket not connected (no HTTP fallback for this command)\n');
+  return false;
 }
 
 function scheduleWsReconnect() {

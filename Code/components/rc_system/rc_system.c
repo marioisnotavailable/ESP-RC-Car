@@ -3,12 +3,15 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 #include "rc_system.h"
+#include "rc_common.h"
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "esp_log.h"
 #include "esp_task_wdt.h"
+#include "esp_sleep.h"
 #include "esp_adc/adc_oneshot.h"
 #include "driver/ledc.h"
+#include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <string.h>
@@ -246,6 +249,24 @@ static void steering_apply(int16_t steer_input)
 
 // ── System Task ───────────────────────────────────────────────────────────────
 
+static void low_voltage_shutdown(void)
+{
+    ESP_LOGE(TAG, "Battery below cutoff (%.3fV < %.3fV) — shutting down",
+             (double)g_vbatt, (double)settings.batt_off_v);
+
+    /* Cut motor first via global safe-mode flag (motor_task observes it). */
+    xEventGroupSetBits(rc_events, SAFE_MODE_BIT);
+
+    /* Disable DRV8323 gate driver — kills high-side power path. */
+    gpio_set_direction(PIN_DRV_EN, GPIO_MODE_OUTPUT);
+    gpio_set_level(PIN_DRV_EN, 0);
+
+    /* Give motor_task one tick to react, then sleep indefinitely.
+     * No wake-up source configured → only reset/power-cycle returns. */
+    vTaskDelay(pdMS_TO_TICKS(100));
+    esp_deep_sleep_start();
+}
+
 void system_task(void *arg)
 {
     adc_init();
@@ -254,6 +275,7 @@ void system_task(void *arg)
 
     TickType_t stable_start  = xTaskGetTickCount();
     bool       marked_stable = false;
+    uint8_t    low_v_streak  = 0;   /* require sustained low reading to avoid noise spikes */
 
     for (;;) {
         esp_task_wdt_reset();
@@ -261,6 +283,17 @@ void system_task(void *arg)
         int pct = read_battery_percent();
         battery_percent = pct;
         xQueueOverwrite(batt_queue, &pct);
+
+        /* Low-voltage protection. g_vbatt > 0.5 skips pre-init zero reading.
+         * Streak of 3 (≈3 s at 1 Hz oversampling) before pulling the trigger. */
+        if (settings.batt_off_v > 0.0f && g_vbatt > 0.5f && g_vbatt < settings.batt_off_v) {
+            if (++low_v_streak >= 3) {
+                low_voltage_shutdown();
+                /* no return */
+            }
+        } else {
+            low_v_streak = 0;
+        }
 
         uint32_t stable_ms = (uint32_t)((xTaskGetTickCount() - stable_start) * portTICK_PERIOD_MS);
         if (!marked_stable && stable_ms > 30000) {
