@@ -5,10 +5,10 @@
 
 static const char *TAG = "drv8323";
 
-static const uint16_t REG_DRV_CTRL    = (1 << 8);
+static const uint16_t REG_DRV_CTRL    = (1 << 10) | (1 << 9) | (1 << 8);
 static const uint16_t REG_GATE_DRV_HS = (3 << 8) | (11 << 4) | 15;
 static const uint16_t REG_GATE_DRV_LS = (1 << 10) | (2 << 8) | (15 << 4) | 15;
-static const uint16_t REG_OCP_CTRL    = (1 << 8) | (1 << 6) | (2 << 4);
+static const uint16_t REG_OCP_CTRL    = (1 << 8) | (3 << 6) | (2 << 4) | 15;
 static const uint16_t REG_CSA_CTRL    = (1 << 10) | (1 << 9) | (2 << 6) | 3;
 
 static const spi_bus_config_t BUS_CFG_DEFAULTS = {

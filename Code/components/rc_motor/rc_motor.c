@@ -186,9 +186,9 @@ void motor_task(void *arg)
         // so the field can keep rotating before back-EMF stabilises.
         uint32_t target_duty = (uint32_t)abs_throttle * PWM_DUTY_MAX / 1000;
 
+        if (target_duty < PWM_DUTY_MAX * 80 / 100) target_duty = PWM_DUTY_MAX * 80 / 100;
+
         if (period_us > RAMP_END_US) {
-            uint32_t ramp_floor = PWM_DUTY_MAX * 20 / 100;
-            if (target_duty < ramp_floor) target_duty = ramp_floor;
             duty = target_duty * RAMP_END_US / period_us;
         } else {
             duty = target_duty;
