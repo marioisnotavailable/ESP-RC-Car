@@ -323,6 +323,6 @@ void steering_task(void *arg)
         if (xQueuePeek(cmd_queue, &cmd, 0) == pdTRUE) {
             steering_apply(cmd.steer);
         }
-        vTaskDelay(pdMS_TO_TICKS(20)); // 50 Hz update rate matches app
+        vTaskDelay(pdMS_TO_TICKS(5)); // 200 Hz poll — minimise lag to motor/servo
     }
 }

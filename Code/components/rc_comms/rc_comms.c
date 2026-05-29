@@ -158,9 +158,10 @@ static void wifi_start_ap(const char *ssid)
 {
     wifi_config_t cfg = {0};
     strlcpy((char *)cfg.ap.ssid, ssid, sizeof(cfg.ap.ssid));
-    cfg.ap.ssid_len      = (uint8_t)strlen(ssid);
-    cfg.ap.max_connection = 4;
-    cfg.ap.authmode      = WIFI_AUTH_OPEN;
+    cfg.ap.ssid_len       = (uint8_t)strlen(ssid);
+    cfg.ap.max_connection = 2;
+    cfg.ap.authmode       = WIFI_AUTH_OPEN;
+    cfg.ap.beacon_interval = 100;
 
     esp_wifi_set_mode(WIFI_MODE_APSTA);
     esp_wifi_set_config(WIFI_IF_AP, &cfg);
@@ -300,6 +301,11 @@ static TickType_t s_last_cmd_tick = 0;
 static esp_err_t ws_handler(httpd_req_t *req)
 {
     if (req->method == HTTP_GET) {
+        int fd = httpd_req_to_sockfd(req);
+        if (fd >= 0) {
+            int yes = 1;
+            setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &yes, sizeof(yes));
+        }
         ESP_LOGI(TAG, "WS handshake /ws");
         return ESP_OK;
     }
@@ -338,20 +344,15 @@ static void broadcast_battery(httpd_handle_t server)
         .final       = true,
     };
 
-    size_t      fds   = 0;
-    int        *clients = NULL;
-    httpd_get_client_list(server, &fds, NULL);
-    if (fds == 0) return;
-    clients = malloc(fds * sizeof(int));
-    if (!clients) return;
-    httpd_get_client_list(server, &fds, clients);
+    int    clients[CONFIG_LWIP_MAX_SOCKETS];
+    size_t fds = sizeof(clients) / sizeof(clients[0]);
+    if (httpd_get_client_list(server, &fds, clients) != ESP_OK || fds == 0) return;
 
     for (size_t i = 0; i < fds; i++) {
         if (httpd_ws_get_fd_info(server, clients[i]) == HTTPD_WS_CLIENT_WEBSOCKET) {
             httpd_ws_send_frame_async(server, clients[i], &pkt);
         }
     }
-    free(clients);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -837,6 +838,11 @@ static httpd_handle_t server81 = NULL;
 static esp_err_t ws81_handler(httpd_req_t *req)
 {
     if (req->method == HTTP_GET) {
+        int fd = httpd_req_to_sockfd(req);
+        if (fd >= 0) {
+            int yes = 1;
+            setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &yes, sizeof(yes));
+        }
         ESP_LOGI(TAG, "WS81 handshake /");
         return ESP_OK;
     }
@@ -886,20 +892,15 @@ static void broadcast_battery81(void)
         .final   = true,
     };
 
-    size_t fds = 0;
-    httpd_get_client_list(server81, &fds, NULL);
-    if (fds == 0) return;
-
-    int *clients = malloc(fds * sizeof(int));
-    if (!clients) return;
-    httpd_get_client_list(server81, &fds, clients);
+    int    clients[CONFIG_LWIP_MAX_SOCKETS];
+    size_t fds = sizeof(clients) / sizeof(clients[0]);
+    if (httpd_get_client_list(server81, &fds, clients) != ESP_OK || fds == 0) return;
 
     for (size_t i = 0; i < fds; i++) {
         if (httpd_ws_get_fd_info(server81, clients[i]) == HTTPD_WS_CLIENT_WEBSOCKET) {
             httpd_ws_send_frame_async(server81, clients[i], &pkt);
         }
     }
-    free(clients);
 }
 
 static httpd_handle_t start_ws81_server(void)
@@ -908,8 +909,15 @@ static httpd_handle_t start_ws81_server(void)
     cfg.server_port      = 81;
     cfg.ctrl_port        = 32769;
     cfg.max_uri_handlers = 4;
-    cfg.max_open_sockets = 3;
+    cfg.max_open_sockets = 7;
     cfg.lru_purge_enable = true;
+    cfg.recv_wait_timeout  = 5;
+    cfg.send_wait_timeout  = 5;
+    cfg.keep_alive_enable  = true;
+    cfg.keep_alive_idle    = 5;
+    cfg.keep_alive_interval = 5;
+    cfg.keep_alive_count   = 3;
+    cfg.task_priority      = 6;
 
     httpd_handle_t srv = NULL;
     if (httpd_start(&srv, &cfg) != ESP_OK) {
@@ -942,6 +950,7 @@ static httpd_handle_t start_ws_server(void)
     cfg.lru_purge_enable = true;
     cfg.recv_wait_timeout = 3;   /* seconds — kill idle Android captive probes fast */
     cfg.send_wait_timeout = 3;
+    cfg.task_priority    = 6;
     cfg.uri_match_fn     = httpd_uri_match_wildcard;
 
     httpd_handle_t srv = NULL;
@@ -1151,6 +1160,15 @@ void comms_task(void *arg)
     /* Start radio in STA mode before any connect attempt. */
     esp_wifi_set_mode(WIFI_MODE_STA);
     esp_wifi_start();
+
+    /* Latency-first radio tuning: disable modem-sleep, force 11N HT20 on both ifs. */
+    esp_wifi_set_ps(WIFI_PS_NONE);
+    esp_wifi_set_protocol(WIFI_IF_STA,
+        WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N);
+    esp_wifi_set_protocol(WIFI_IF_AP,
+        WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N);
+    esp_wifi_set_bandwidth(WIFI_IF_AP, WIFI_BW_HT20);
+    esp_wifi_set_bandwidth(WIFI_IF_STA, WIFI_BW_HT20);
 
     WifiList wl;
     bool connected     = false;
