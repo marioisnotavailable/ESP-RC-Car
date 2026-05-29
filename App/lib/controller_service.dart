@@ -11,10 +11,10 @@ class ControllerService extends ChangeNotifier {
   double _throttle = 0;
   double _steer = 0;
 
-  // Filtering — EMA: out = alpha*new + (1-alpha)*prev. Lower alpha = heavier smoothing.
+  // Filtering — EMA: out = alpha*new + (1-alpha)*prev. Higher alpha = less smoothing, less lag.
   static const double steerDeadzone = 0.08;
-  static const double steerFilterAlpha = 0.30;
-  static const double throttleFilterAlpha = 0.30;
+  static const double steerFilterAlpha = 0.75;
+  static const double throttleFilterAlpha = 0.70;
   double _steerFilt = 0;
   double _thrFilt = 0;
 
@@ -58,7 +58,8 @@ class ControllerService extends ChangeNotifier {
 
   void _sendControls() {
     if (_connectionService.status != ConnectionStatus.connected) return;
-    final msg = '${_thrFilt.round()},${_steerFilt.round()},0';
+    // Hardware wiring inverts throttle and steer — flip on wire.
+    final msg = '${(-_thrFilt).round()},${(-_steerFilt).round()},0';
     _connectionService.send(msg);
   }
 
