@@ -34,31 +34,31 @@ jobs:
           sed -i '/^build_flags/a\    -DFOTA_CURRENT_VERSION=\\\"'"${TAG}"'\\\"' platformio.ini
 
       - name: Build firmware
-        run: pio run -e esp32dev
+        run: pio run -e espidf
 
       - name: Build LittleFS
-        run: pio run -e esp32dev --target buildfs
+        run: pio run -e espidf --target buildfs
 
       - name: Rename binaries
         run: |
-          cp .pio/build/esp32dev/firmware.bin  .pio/build/esp32dev/esp-rc-car.bin
-          cp .pio/build/esp32dev/littlefs.bin  .pio/build/esp32dev/esp-rc-car-littlefs.bin
+          cp .pio/build/espidf/firmware.bin  .pio/build/espidf/esp-rc-car.bin
+          cp .pio/build/espidf/littlefs.bin  .pio/build/espidf/esp-rc-car-littlefs.bin
 
       - name: Upload as artifacts
         uses: actions/upload-artifact@v4
         with:
           name: firmware
           path: |
-            Code/.pio/build/esp32dev/esp-rc-car.bin
-            Code/.pio/build/esp32dev/esp-rc-car-littlefs.bin
+            Code/.pio/build/espidf/esp-rc-car.bin
+            Code/.pio/build/espidf/esp-rc-car-littlefs.bin
 
       - name: Upload to release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            Code/.pio/build/esp32dev/esp-rc-car.bin
-            Code/.pio/build/esp32dev/esp-rc-car-littlefs.bin
+            Code/.pio/build/espidf/esp-rc-car.bin
+            Code/.pio/build/espidf/esp-rc-car-littlefs.bin
 
   # ─────────────────────────────────────────────
   # 2) Android APK
@@ -80,7 +80,7 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: stable
+          channel: stable
           cache: true
 
       - name: Install dependencies
@@ -119,8 +119,11 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: stable
+          channel: stable
           cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
 
       - name: Install CocoaPods dependencies
         run: |
