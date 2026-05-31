@@ -1,35 +1,187 @@
-name: Build & Upload Release
+name: Build & Release
 
 on:
   release:
     types: [published]
+  workflow_dispatch:
 
 jobs:
-  build:
+  # ─────────────────────────────────────────────
+  # 1) Firmware + LittleFS (Ubuntu)
+  # ─────────────────────────────────────────────
+  build-firmware:
+    name: Build Firmware + LittleFS
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Code
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
-      - name: Build firmware with ESP-IDF
-        uses: espressif/esp-idf-ci-action@v1
+      - uses: actions/setup-python@v5
         with:
-          esp_idf_version: v5.5
-          target: esp32s3
-          path: Code
-          command: idf.py -DPROJECT_VER="${{ github.event.release.tag_name }}" build
+          python-version: "3.11"
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Inject version from release tag
+        if: github.event_name == 'release'
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          echo "Building with FOTA_CURRENT_VERSION=${TAG}"
+          sed -i '/^build_flags/a\    -DFOTA_CURRENT_VERSION=\\\"'"${TAG}"'\\\"' platformio.ini
+
+      - name: Build firmware
+        run: pio run -e esp32dev
+
+      - name: Build LittleFS
+        run: pio run -e esp32dev --target buildfs
 
       - name: Rename binaries
         run: |
-          sudo cp Code/build/Code.bin Code/build/esp-rc-car.bin
-          sudo cp Code/build/littlefs.bin Code/build/esp-rc-car-littlefs.bin
-          sudo chown $USER Code/build/esp-rc-car.bin Code/build/esp-rc-car-littlefs.bin
+          cp .pio/build/esp32dev/firmware.bin  .pio/build/esp32dev/esp-rc-car.bin
+          cp .pio/build/esp32dev/littlefs.bin  .pio/build/esp32dev/esp-rc-car-littlefs.bin
 
-      - name: Upload release assets
+      - name: Upload as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: |
+            Code/.pio/build/esp32dev/esp-rc-car.bin
+            Code/.pio/build/esp32dev/esp-rc-car-littlefs.bin
+
+      - name: Upload to release
+        if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            Code/build/esp-rc-car.bin
-            Code/build/esp-rc-car-littlefs.bin
+            Code/.pio/build/esp32dev/esp-rc-car.bin
+            Code/.pio/build/esp32dev/esp-rc-car-littlefs.bin
+
+  # ─────────────────────────────────────────────
+  # 2) Android APK (Ubuntu)
+  # ─────────────────────────────────────────────
+  build-android:
+    name: Build APK
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: App
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build APK
+        run: flutter build apk --release
+
+      - name: Rename APK
+        run: cp build/app/outputs/flutter-apk/app-release.apk EspRCCar.apk
+
+      - name: Upload as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EspRCCar-APK
+          path: App/EspRCCar.apk
+
+      - name: Upload to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: App/EspRCCar.apk
+
+  # ─────────────────────────────────────────────
+  # 3) iOS IPA (macOS)
+  # ─────────────────────────────────────────────
+  build-ios:
+    name: Build IPA
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: App
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: stable
+          cache: true
+
+      - name: Install CocoaPods dependencies
+        run: |
+          cd ios
+          pod install
+
+      - name: Import signing certificate
+        # Requires repository secrets:
+        #   BUILD_CERTIFICATE_BASE64      — .p12 cert, base64 encoded
+        #   P12_PASSWORD                  — .p12 password
+        #   BUILD_PROVISION_PROFILE_BASE64 — .mobileprovision, base64 encoded
+        #   KEYCHAIN_PASSWORD             — any password for the temp keychain
+        # Without these secrets the next step builds an unsigned IPA instead.
+        if: ${{ secrets.BUILD_CERTIFICATE_BASE64 != '' }}
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          CERT=$RUNNER_TEMP/cert.p12
+          PP=$RUNNER_TEMP/profile.mobileprovision
+          KC=$RUNNER_TEMP/signing.keychain-db
+
+          echo -n "$BUILD_CERTIFICATE_BASE64"       | base64 --decode -o $CERT
+          echo -n "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode -o $PP
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KC
+          security set-keychain-settings -lut 21600 $KC
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KC
+          security import $CERT -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KC
+          security list-keychain -d user -s $KC
+
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          cp $PP ~/Library/MobileDevice/Provisioning\ Profiles
+
+      - name: Build IPA (signed)
+        if: ${{ secrets.BUILD_CERTIFICATE_BASE64 != '' }}
+        run: flutter build ipa --release
+
+      - name: Build IPA (unsigned fallback)
+        if: ${{ secrets.BUILD_CERTIFICATE_BASE64 == '' }}
+        run: |
+          flutter build ios --release --no-codesign
+          mkdir Payload
+          cp -r build/ios/iphoneos/Runner.app Payload/
+          zip -r EspRCCar.ipa Payload
+          rm -rf Payload
+
+      - name: Locate signed IPA
+        if: ${{ secrets.BUILD_CERTIFICATE_BASE64 != '' }}
+        run: cp build/ios/ipa/esp_rc_car.ipa EspRCCar.ipa
+
+      - name: Upload as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EspRCCar-IPA
+          path: App/EspRCCar.ipa
+
+      - name: Upload to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: App/EspRCCar.ipa
