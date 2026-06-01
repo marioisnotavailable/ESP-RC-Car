@@ -66,13 +66,14 @@ app_main() → init → rc_recovery_check() → rc_settings_load()
 | Bereich | Tech |
 |---|---|
 | MCU | ESP32-S3 (16MB Flash) |
-| Firmware | PlatformIO + **ESP-IDF** Framework |
+| Firmware | PlatformIO + **ESP-IDF 6.0** Framework |
 | RTOS | FreeRTOS (4 Tasks) |
 | App | Flutter (Android, iOS, Windows, Web) |
 | Motor | Mini1410 2500kv BLDC |
 | Treiber | DRV8323SRTAR (SPI) |
 | Kommunikation | WebSocket (Port 80), UDP Discovery (Port 49352) |
-| OTA | GitHub Releases (esp_https_ota) |
+| Firmware-OTA | GitHub Releases (esp_https_ota) |
+| App-Update | GitHub Releases (In-App, signierte APK) |
 | Einstellungen | ESP-IDF NVS |
 | PCB | Altium Designer |
 

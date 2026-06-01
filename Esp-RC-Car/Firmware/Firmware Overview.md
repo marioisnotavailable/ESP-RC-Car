@@ -4,9 +4,20 @@ tags: [firmware, esp32, espidf, freertos]
 
 # Firmware Overview
 
-PlatformIO Projekt, **ESP-IDF Framework**, Ziel: **ESP32-S3-DevKitC-1**
+PlatformIO Projekt, **ESP-IDF 6.0 Framework**, Ziel: **ESP32-S3-DevKitC-1**
 
 > ⚠️ Branch `esp-idf-migration` — komplett von Arduino auf ESP-IDF migriert.
+> Inzwischen zusätzlich von ESP-IDF 5.x auf **6.0** angehoben (siehe unten).
+
+## ESP-IDF 6.0 Migration
+
+PlatformIO `framework-espidf @ ~4.60001.0` (= ESP-IDF 6.0.1). Wichtige Anpassungen gegenüber 5.x:
+
+- **cJSON**: kein eingebautes `json`-Component mehr → Managed Component `espressif/cjson` in `src/idf_component.yml`, in `rc_comms` `REQUIRES cjson`
+- **`driver` aufgeteilt** → `esp_driver_gpio`, `esp_driver_spi`, `esp_driver_ledc` in den `REQUIRES` der Komponenten
+- `freertos/FreeRTOS.h` muss **vor** `freertos/task.h` inkludiert werden (sonst Hard-Error)
+- WiFi-Enum `WIFI_BW_HT20` → `WIFI_BW20`
+- sdkconfig: umbenannte Symbole (`ESP_SYSTEM_MEMPROT*`), Compiler-Optimization als Choice → altes `sdkconfig.espidf` neu generiert
 
 ## Build-Targets
 

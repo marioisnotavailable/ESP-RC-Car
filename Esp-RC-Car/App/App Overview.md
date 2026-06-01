@@ -21,9 +21,11 @@ main.dart
 │   ├── ConnectionService    ← WebSocket + UDP Discovery
 │   └── ControllerService   ← Gamepad/Joystick → Befehle
 └── RCCarApp
-    ├── ui/dev_panel.dart      ← Developer Panel
+    ├── ui/dev_panel.dart      ← Developer Panel (+ Update-Button)
     ├── ui/gamepad_status.dart ← Gamepad-Verbindungsanzeige
     └── widgets/joystick.dart  ← Touch-Joystick Widget
+
+update_service.dart            ← GitHub-Release Self-Update (Android)
 ```
 
 ## State Management
@@ -51,10 +53,20 @@ App → WebSocket ws://[ip]:81      → Throttle/Steer Befehle
 ESP32 → WebSocket                 → Batterie % empfangen
 ```
 
+## In-App Update (Android)
+
+Die App sucht über die **GitHub Releases API** nach einer neueren Version und installiert sie selbst:
+
+- `update_service.dart` — liest `releases/latest`, vergleicht mit der installierten Version (`package_info_plus`), lädt `EspRCCar.apk` (`http` + `path_provider`) und öffnet den Android-Installer (`open_filex`)
+- ⟳-Button im [[DevPanel]] (nur Android) → "Update verfügbar"-Dialog → Download mit Fortschritt → Installation
+- Voraussetzung: alle Releases mit **demselben Release-Key** signiert (CI-Signing via GitHub Secrets), sonst Signatur-Konflikt beim Update
+- App-Version kommt im CI aus dem Release-Tag (`flutter build --build-name`), damit der Versionsvergleich stimmt
+
 ## Module
 
 - [[ConnectionService]] — WebSocket + UDP Discovery
 - [[ControllerService]] — Gamepad/Joystick Steuerlogik
+- [[UpdateService]] — GitHub-Release Self-Update (Android)
 
 ## Windows Besonderheit
 
