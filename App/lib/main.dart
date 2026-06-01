@@ -67,8 +67,16 @@ class _ControllerPageState extends State<ControllerPage> {
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final isSmallScreen = screenWidth <= 700;
-    final stickSize = isSmallScreen ? 240.0 : 320.0;
-    final knobSize = isSmallScreen ? 100.0 : 120.0;
+    // Joysticks: bigger in the normal driving view (full height is free). When the
+    // dev panel is open the height is limited, so keep the size there but move them
+    // up so they fill the empty space beside the WS indicator instead of sitting low.
+    final stickSize = _showDevPanel
+        ? (isSmallScreen ? 240.0 : 320.0)
+        : (isSmallScreen ? 290.0 : 360.0);
+    final knobSize = _showDevPanel
+        ? (isSmallScreen ? 100.0 : 120.0)
+        : (isSmallScreen ? 120.0 : 150.0);
+    final stickAlignY = _showDevPanel ? 0.2 : 0.55;
 
     final controller = Provider.of<ControllerService>(context);
 
@@ -92,7 +100,7 @@ class _ControllerPageState extends State<ControllerPage> {
                           children: [
                             if (!controller.gamepadConnected) ...[
                               Align(
-                                alignment: const Alignment(-0.98, 0.6),
+                                alignment: Alignment(-0.98, stickAlignY),
                                 child: EdgeStickyJoystick(
                                   stickSize: stickSize,
                                   knobSize: knobSize,
@@ -109,7 +117,7 @@ class _ControllerPageState extends State<ControllerPage> {
                                 ),
                               ),
                               Align(
-                                alignment: const Alignment(0.98, 0.6),
+                                alignment: Alignment(0.98, stickAlignY),
                                 child: EdgeStickyJoystick(
                                   stickSize: stickSize,
                                   knobSize: knobSize,
