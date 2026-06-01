@@ -175,7 +175,7 @@ class _DevPanelState extends State<DevPanel> {
                 onPressed: widget.onToggle,
                 tooltip: 'Toggle Dev Panel',
               ),
-              if (!kIsWeb && Platform.isAndroid)
+              if (widget.isExpanded && !kIsWeb && Platform.isAndroid)
                 IconButton(
                   icon: _checkingUpdate
                       ? const SizedBox(
