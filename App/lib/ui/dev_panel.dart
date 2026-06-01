@@ -1,5 +1,10 @@
+import 'dart:io';
+
 import 'package:esp_rc_car/connection_service.dart';
+import 'package:esp_rc_car/update_service.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:open_filex/open_filex.dart';
 import 'package:provider/provider.dart';
 
 class DevPanel extends StatefulWidget {
@@ -16,6 +21,7 @@ class _DevPanelState extends State<DevPanel> {
   late final TextEditingController _wsUrlController;
   late final FocusNode _focusNode;
   late ConnectionService _connectionService;
+  bool _checkingUpdate = false;
 
   @override
   void initState() {
@@ -30,6 +36,114 @@ class _DevPanelState extends State<DevPanel> {
     _wsUrlController.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  Future<void> _checkForUpdate() async {
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _checkingUpdate = true);
+
+    AppUpdateInfo? info;
+    try {
+      info = await UpdateService().checkForUpdate();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _checkingUpdate = false);
+      messenger.showSnackBar(
+        SnackBar(content: Text('Update-Prüfung fehlgeschlagen: $e')),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() => _checkingUpdate = false);
+
+    if (info == null) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('App ist aktuell ✔')),
+      );
+      return;
+    }
+
+    final update = info;
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Update verfügbar: v${update.version}'),
+        content: SingleChildScrollView(
+          child: Text(
+            update.notes.isEmpty
+                ? 'Eine neuere Version ist verfügbar.'
+                : update.notes,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Später'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Herunterladen & installieren'),
+          ),
+        ],
+      ),
+    );
+
+    if (go == true) {
+      await _downloadAndInstall(update);
+    }
+  }
+
+  Future<void> _downloadAndInstall(AppUpdateInfo update) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final progress = ValueNotifier<double>(0);
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Lade Update herunter…'),
+        content: ValueListenableBuilder<double>(
+          valueListenable: progress,
+          builder: (_, value, __) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              LinearProgressIndicator(value: value > 0 ? value : null),
+              const SizedBox(height: 12),
+              Text('${(value * 100).toStringAsFixed(0)} %'),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    try {
+      final path = await UpdateService().download(
+        update.downloadUrl,
+        onProgress: (p) => progress.value = p,
+      );
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+      final result = await OpenFilex.open(
+        path,
+        type: 'application/vnd.android.package-archive',
+      );
+      if (result.type != ResultType.done && mounted) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('Installer konnte nicht geöffnet werden: ${result.message}'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+      if (mounted) {
+        messenger.showSnackBar(
+          SnackBar(content: Text('Download fehlgeschlagen: $e')),
+        );
+      }
+    } finally {
+      progress.dispose();
+    }
   }
 
   @override
@@ -61,6 +175,18 @@ class _DevPanelState extends State<DevPanel> {
                 onPressed: widget.onToggle,
                 tooltip: 'Toggle Dev Panel',
               ),
+              if (!kIsWeb && Platform.isAndroid)
+                IconButton(
+                  icon: _checkingUpdate
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.system_update, color: Colors.white70),
+                  onPressed: _checkingUpdate ? null : _checkForUpdate,
+                  tooltip: 'Auf App-Update prüfen',
+                ),
               const SizedBox(width: 8),
               if (widget.isExpanded)
                 Expanded(
