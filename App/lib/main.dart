@@ -70,17 +70,17 @@ class _ControllerPageState extends State<ControllerPage> {
     // Joysticks: bigger in the normal driving view (full height is free). When the
     // dev panel is open the height is limited, so keep the size there but move them
     // up so they fill the empty space beside the WS indicator instead of sitting low.
-    final stickSize = _showDevPanel
-        ? (isSmallScreen ? 240.0 : 320.0)
-        : (isSmallScreen ? 290.0 : 360.0);
-    final knobSize = _showDevPanel
-        ? (isSmallScreen ? 100.0 : 120.0)
-        : (isSmallScreen ? 120.0 : 150.0);
-    final stickAlignY = _showDevPanel ? 0.2 : 0.55;
+    final stickSize = isSmallScreen ? 290.0 : 360.0;
+    final knobSize = isSmallScreen ? 120.0 : 150.0;
+    // Driving view: sticks low for thumb reach. With the dev panel open, center them
+    // vertically so they rise up and overlap the WS indicator (panel/WS draw on top).
+    final stickAlignY = _showDevPanel ? 0.0 : 0.55;
 
     final controller = Provider.of<ControllerService>(context);
 
-    final topOffset = _showDevPanel ? (_devPanelHeight + 16) : 0.0;
+    // Don't push the joysticks down when the dev panel is open — let them fill the
+    // height and sit behind the panel so they overlap the WS indicator, as requested.
+    final topOffset = 0.0;
 
     return Scaffold(
       resizeToAvoidBottomInset: false,
