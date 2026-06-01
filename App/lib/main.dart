@@ -72,15 +72,17 @@ class _ControllerPageState extends State<ControllerPage> {
     // up so they fill the empty space beside the WS indicator instead of sitting low.
     final stickSize = isSmallScreen ? 290.0 : 360.0;
     final knobSize = isSmallScreen ? 120.0 : 150.0;
-    // Driving view: sticks low for thumb reach. With the dev panel open, center them
-    // vertically so they rise up and overlap the WS indicator (panel/WS draw on top).
-    final stickAlignY = _showDevPanel ? 0.0 : 0.55;
+    // Driving view: sticks low for thumb reach. With the dev panel open, pin them to
+    // the top of the area below the panel row (see topOffset) so they overlap the WS
+    // status line on the sides — but not the IP/Connect row above it.
+    final stickAlignY = _showDevPanel ? -1.0 : 0.55;
 
     final controller = Provider.of<ControllerService>(context);
 
-    // Don't push the joysticks down when the dev panel is open — let them fill the
-    // height and sit behind the panel so they overlap the WS indicator, as requested.
-    final topOffset = 0.0;
+    // With the dev panel open, start the joystick area just below the panel row so the
+    // sticks reach up to the WS status line (overlapping its sides) without covering the
+    // IP/Connect row. Driving view (panel closed) uses the full height.
+    final topOffset = _showDevPanel ? (_devPanelHeight - 16) : 0.0;
 
     return Scaffold(
       resizeToAvoidBottomInset: false,
