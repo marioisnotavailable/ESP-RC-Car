@@ -11,6 +11,7 @@ enum DiscoveryMethod { none, udp, tcp, manual, lastKnown }
 
 class ConnectionService extends ChangeNotifier {
   static const _urlKey = 'ws_url';
+  static const _battPrefix = 'BATT:';
 
   // --- Private State ---
   ConnectionStatus _status = ConnectionStatus.disconnected;
@@ -20,6 +21,8 @@ class ConnectionService extends ChangeNotifier {
   String _lastSuccessfulUrl = 'ws://192.168.4.1:81/';
   Timer? _reconnectTimer;
   Completer<void>? _scanCompleter;
+  int? _batteryPercent;
+  int _reconnectAttempts = 0;
 
   // --- Constants ---
   static const int _discPort = 49352;
@@ -32,6 +35,7 @@ class ConnectionService extends ChangeNotifier {
   DiscoveryMethod get discoveryMethod => _discoveryMethod;
   WebSocket? get socket => _socket;
   String get wsUrl => _wsUrl;
+  int? get batteryPercent => _batteryPercent;
 
   ConnectionService() {
     _loadUrl().then((_) {
@@ -204,7 +208,7 @@ class ConnectionService extends ChangeNotifier {
 
       _socket = socket;
       _socket?.listen(
-        (_) {},
+        _handleIncomingMessage,
         onDone: () {
           debugPrint('[WS] Disconnected');
           _disconnect();
@@ -233,6 +237,7 @@ class ConnectionService extends ChangeNotifier {
     DiscoveryMethod method,
   ) async {
     _discoveryMethod = method;
+    _reconnectAttempts = 0;
     if (_lastSuccessfulUrl != url) {
       _lastSuccessfulUrl = url;
       await _saveUrl(url);
@@ -256,13 +261,42 @@ class ConnectionService extends ChangeNotifier {
     _disconnect();
   }
 
+  void _handleIncomingMessage(dynamic data) {
+    if (data == null) return;
+    final msg = data.toString().trim();
+    if (msg.isEmpty) return;
+
+    if (msg.startsWith(_battPrefix)) {
+      final rawValue = msg.substring(_battPrefix.length).trim();
+      final percent = int.tryParse(rawValue);
+      if (percent == null) {
+        debugPrint('[WS] Invalid battery payload: $msg');
+        return;
+      }
+      _setBatteryPercent(percent);
+      return;
+    }
+    debugPrint('[WS] Unhandled message: $msg');
+  }
+
+  void _setBatteryPercent(int value) {
+    if (_batteryPercent == value) return;
+    _batteryPercent = value;
+    notifyListeners();
+  }
+
   void _disconnect({bool quiet = false}) {
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
     _socket?.close();
     _socket = null;
+    if (_batteryPercent != null) {
+      _batteryPercent = null;
+    }
     if (!quiet) {
       _updateStatus(ConnectionStatus.disconnected, DiscoveryMethod.none);
+    } else {
+      notifyListeners();
     }
   }
 
@@ -273,7 +307,11 @@ class ConnectionService extends ChangeNotifier {
         : _wsUrl;
     if (retryUrl.trim().isEmpty) return;
 
-    _reconnectTimer = Timer(const Duration(seconds: 3), () {
+    // Exponential backoff: 2s, 4s, 8s, 16s, capped at 30s.
+    final delaySec = (1 << _reconnectAttempts.clamp(1, 5)).clamp(2, 30);
+    _reconnectAttempts++;
+
+    _reconnectTimer = Timer(Duration(seconds: delaySec), () {
       if (_status == ConnectionStatus.connected) return;
       connect(retryUrl, reason: DiscoveryMethod.lastKnown);
     });

@@ -1,0 +1,20 @@
+dependencies:
+  idf:
+    source:
+      type: idf
+    version: 6.0.1
+  joltwallet/littlefs:
+    component_hash: a0d01c993ff0a0ae5dad216595d225b4fa1c8577499258007af20883eb941aab
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.22.0
+direct_dependencies:
+- joltwallet/littlefs
+manifest_hash: 0c94930ca1dfe3f8f024f9bcfe6b6c609a6c6a359f3795bac1bbb40fce342d0d
+target: esp32s3
+version: 2.0.0

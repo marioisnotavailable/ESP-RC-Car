@@ -1,0 +1,9 @@
+
+Code/.claude/settings.local.json
+
+# Claude Code / Ruflo workspace state
+**/.claude/
+**/.claude-flow/
+CLAUDE.md
+**/CLAUDE.md
+graphify-out/

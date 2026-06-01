@@ -52,25 +52,37 @@ class _ControllerPageState extends State<ControllerPage> {
   final GlobalKey _devPanelKey = GlobalKey();
   double _devPanelHeight = 0;
 
-  @override
-  Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isSmallScreen = screenWidth <= 700;
-    final stickSize = isSmallScreen ? 240.0 : 320.0;
-    final knobSize = isSmallScreen ? 100.0 : 120.0;
-
-    final controller = Provider.of<ControllerService>(context);
-
+  void _toggleDevPanel() {
+    setState(() => _showDevPanel = !_showDevPanel);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final renderBox = _devPanelKey.currentContext?.size;
-      final height = renderBox?.height ?? 0;
+      final height = _devPanelKey.currentContext?.size?.height ?? 0;
       if ((height - _devPanelHeight).abs() > 0.5) {
         setState(() => _devPanelHeight = height);
       }
     });
+  }
 
-    final topOffset = _showDevPanel ? (_devPanelHeight + 16) : 0.0;
+  @override
+  Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isSmallScreen = screenWidth <= 700;
+    // Joysticks: bigger in the normal driving view (full height is free). When the
+    // dev panel is open the height is limited, so keep the size there but move them
+    // up so they fill the empty space beside the WS indicator instead of sitting low.
+    final stickSize = isSmallScreen ? 290.0 : 360.0;
+    final knobSize = isSmallScreen ? 120.0 : 150.0;
+    // Driving view: sticks low for thumb reach. With the dev panel open, pin them to
+    // the top of the area below the panel row (see topOffset) so they overlap the WS
+    // status line on the sides — but not the IP/Connect row above it.
+    final stickAlignY = _showDevPanel ? -1.0 : 0.55;
+
+    final controller = Provider.of<ControllerService>(context);
+
+    // With the dev panel open, start the joystick area just below the panel row so the
+    // sticks reach up to the WS status line (overlapping its sides) without covering the
+    // IP/Connect row. Driving view (panel closed) uses the full height.
+    final topOffset = _showDevPanel ? (_devPanelHeight - 16) : 0.0;
 
     return Scaffold(
       resizeToAvoidBottomInset: false,
@@ -88,10 +100,9 @@ class _ControllerPageState extends State<ControllerPage> {
                       Expanded(
                         child: Stack(
                           children: [
-                            if (_showDevPanel) const ConnectionStatusView(),
                             if (!controller.gamepadConnected) ...[
                               Align(
-                                alignment: const Alignment(-0.98, 0.6),
+                                alignment: Alignment(-0.98, stickAlignY),
                                 child: EdgeStickyJoystick(
                                   stickSize: stickSize,
                                   knobSize: knobSize,
@@ -108,7 +119,7 @@ class _ControllerPageState extends State<ControllerPage> {
                                 ),
                               ),
                               Align(
-                                alignment: const Alignment(0.98, 0.6),
+                                alignment: Alignment(0.98, stickAlignY),
                                 child: EdgeStickyJoystick(
                                   stickSize: stickSize,
                                   knobSize: knobSize,
@@ -153,10 +164,29 @@ class _ControllerPageState extends State<ControllerPage> {
                 child: DevPanel(
                   key: _devPanelKey,
                   isExpanded: _showDevPanel,
-                  onToggle: () =>
-                      setState(() => _showDevPanel = !_showDevPanel),
+                  onToggle: _toggleDevPanel,
                 ),
               ),
+              Positioned(
+                top: _showDevPanel ? (_devPanelHeight - 6) : 8,
+                right: 12,
+                child: const ConnectionStatusView(
+                  showWsStatus: false,
+                  showBattery: true,
+                  rowAlignment: MainAxisAlignment.end,
+                ),
+              ),
+              if (_showDevPanel)
+                Positioned(
+                  top: _devPanelHeight - 6,
+                  left: 0,
+                  right: 0,
+                  child: const ConnectionStatusView(
+                    showWsStatus: true,
+                    showBattery: false,
+                    rowAlignment: MainAxisAlignment.center,
+                  ),
+                ),
             ],
           ),
         ),

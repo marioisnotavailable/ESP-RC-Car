@@ -143,6 +143,14 @@ class _JoystickState extends State<Joystick> {
   }
 
   void _handlePanEnd(DragEndDetails details) {
+    _resetToCenter();
+  }
+
+  void _handlePanCancel() {
+    _resetToCenter();
+  }
+
+  void _resetToCenter() {
     _isDragging = false;
     _pointerOffset = null;
     setState(() => _local = Offset.zero);
@@ -159,6 +167,7 @@ class _JoystickState extends State<Joystick> {
       onPanDown: _handlePanDown,
       onPanUpdate: _handlePanUpdate,
       onPanEnd: _handlePanEnd,
+      onPanCancel: _handlePanCancel,
       child: Container(
         width: widget.size,
         height: widget.size,

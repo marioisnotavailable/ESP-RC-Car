@@ -1,0 +1,16 @@
+---
+source_file: "App/README.md"
+type: "concept"
+community: "Community None"
+tags:
+  - graphify/concept
+  - graphify/EXTRACTED
+  - community/Community_None
+---
+
+# Native Gamepad Integration (Kotlin InputManager / Swift GameController)
+
+## Connections
+- [[ESP-RC Car Controller App README]] - `references` [EXTRACTED]
+
+#graphify/concept #graphify/EXTRACTED #community/Community_None

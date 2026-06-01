@@ -26,22 +26,148 @@
         <button id="scan-btn" class="right">Scan Wi‑Fi</button>
       </div>
       <div class="hint">Scanning can briefly disrupt AP; initial results were scanned at startup.</div>
-      <table id="scan-table">
-        <thead><tr><th>SSID</th><th>RSSI</th><th>Enc</th><th>Pick</th></tr></thead>
-        <tbody></tbody>
-      </table>
+      <div class="table-wrap">
+        <table id="scan-table">
+          <thead><tr><th>SSID</th><th>RSSI</th><th>Enc</th><th>Pick</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
     </section>
 
     <section class="card">
       <h3>Saved Networks</h3>
-      <table id="saved-table">
-        <thead><tr><th>#</th><th>SSID</th><th>Action</th></tr></thead>
-        <tbody></tbody>
-      </table>
+      <div class="table-wrap">
+        <table id="saved-table">
+          <thead><tr><th>#</th><th>SSID</th><th>Last Connected</th><th>Order</th><th>Action</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
     </section>
 
     <section class="card">
       <form id="reboot-form"><button type="submit">Reboot</button></form>
+      <button id="restart-charge-btn" style="margin-top:8px">Restart Charging (GPIO47)</button>
+    </section>
+
+    <section class="card">
+      <h3>Settings</h3>
+
+      <h4>General</h4>
+      <div class="setting">
+        <label>Firmware Version</label>
+        <span id="cfg-version">--</span>
+      </div>
+      <div class="setting">
+        <label>Auto Update (OTA)</label>
+        <label class="switch"><input id="cfg-ota" type="checkbox" /><span class="slider"></span></label>
+      </div>
+      <div class="setting">
+        <label>OTA Check Interval</label>
+        <input id="cfg-otaInterval" type="number" min="1" max="1440" step="1" style="width:80px" /><span class="unit">min</span>
+      </div>
+      <div class="setting">
+        <label>Always Start Config Page</label>
+        <label class="switch"><input id="cfg-alwaysPanel" type="checkbox" /><span class="slider"></span></label>
+      </div>
+
+      <h4>Network</h4>
+      <div class="setting">
+        <label>WiFi TX Power</label>
+        <select id="cfg-txPower">
+          <option value="0">Low (8.5 dBm)</option>
+          <option value="1">Medium (15 dBm)</option>
+          <option value="2">High (17 dBm)</option>
+          <option value="3">Max (19.5 dBm)</option>
+        </select>
+      </div>
+      <div class="setting">
+        <label>Failsafe Timeout</label>
+        <input id="cfg-failsafe" type="number" min="100" max="5000" step="50" style="width:80px" /><span class="unit">ms</span>
+      </div>
+      <div class="setting">
+        <label>Discovery Beacon</label>
+        <input id="cfg-beacon" type="number" min="500" max="30000" step="500" style="width:80px" /><span class="unit">ms</span>
+      </div>
+      <div class="setting">
+        <label>AP Name Prefix</label>
+        <input id="cfg-apPrefix" type="text" maxlength="24" style="width:160px" />
+      </div>
+
+      <h4>Steering</h4>
+      <div class="setting">
+        <label>Invert Steering</label>
+        <label class="switch"><input id="cfg-steerInvert" type="checkbox" /><span class="slider"></span></label>
+      </div>
+      <div class="setting">
+        <label>Steering Gain</label>
+        <input id="cfg-steerGain" type="number" min="0.3" max="1.5" step="0.1" style="width:80px" />
+      </div>
+      <div class="setting">
+        <label>Steering Deadzone</label>
+        <input id="cfg-steerDeadzone" type="number" min="0" max="200" step="5" style="width:80px" />
+      </div>
+      <div class="setting">
+        <label>Steering Filter</label>
+        <input id="cfg-steerFilter" type="number" min="0.5" max="0.95" step="0.05" style="width:80px" />
+        <span class="hint" style="margin:0">(0.6=direct, 0.9=smooth)</span>
+      </div>
+
+      <h4>Battery</h4>
+      <div class="setting">
+        <label>Warning Voltage</label>
+        <input id="cfg-battWarn" type="number" min="6.0" max="9.0" step="0.1" style="width:80px" /><span class="unit">V</span>
+      </div>
+      <div class="setting">
+        <label>Shutdown Voltage</label>
+        <input id="cfg-battOff" type="number" min="6.0" max="9.0" step="0.1" style="width:80px" /><span class="unit">V</span>
+      </div>
+
+      <div class="setting">
+        <label>ADC Correction Factor</label>
+        <span id="cfg-adcCorr">--</span>
+      </div>
+      <div class="setting">
+        <label>Current Reading</label>
+        <span id="cfg-vBatt">--</span><span class="unit">V</span>
+        <span style="margin-left:10px">(<span id="cfg-battPercent">--</span>%)</span>
+      </div>
+      <div class="setting">
+        <label>Calibrate (Multimeter V)</label>
+        <input id="cfg-realVoltage" type="number" min="1" max="15" step="0.01" style="width:100px" placeholder="e.g. 8.25" />
+        <button id="cfg-calibrate">Calibrate</button>
+      </div>
+
+      <h4>Motor</h4>
+      <div class="setting">
+        <label>Max Throttle</label>
+        <input id="cfg-maxThrottle" type="number" min="10" max="100" step="5" style="width:80px" /><span class="unit">%</span>
+      </div>
+
+      <button id="cfg-save">Save Settings</button>
+      <div id="cfg-msg" class="msg"></div>
+    </section>
+
+    <section class="card" id="terminal-card">
+      <div class="row">
+        <h3>Terminal</h3>
+        <div class="terminal-top-actions">
+          <button id="term-fullscreen" type="button">Full Screen</button>
+          <span id="term-state" class="state bad">offline</span>
+        </div>
+      </div>
+      <pre id="term-output" class="terminal" aria-live="polite"></pre>
+      <form id="term-form" class="terminal-form">
+        <input id="term-input" type="text" autocomplete="off" placeholder="Type command, e.g. status" />
+        <button type="submit">Send</button>
+        <button id="term-clear" type="button">Clear</button>
+      </form>
+      <div class="hint">Commands are the same as serial: help, status, settings, wifi, scan, drv, log ...</div>
+    </section>
+
+    <section class="card">
+      <h3>ADC Monitor</h3>
+      <p><strong>V_ADC (calibrated):</strong> <code id="adc-vAdc">--</code> V</p>
+      <p><strong>V_Battery:</strong> <code id="adc-vBatt">--</code> V</p>
     </section>
   </main>
 

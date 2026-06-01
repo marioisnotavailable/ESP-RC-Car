@@ -1,0 +1,169 @@
+name: Build & Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  # ─────────────────────────────────────────────
+  # 1) Firmware + LittleFS
+  # ─────────────────────────────────────────────
+  build-firmware:
+    name: Build Firmware + LittleFS
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Code
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Inject version from release tag
+        if: github.event_name == 'release'
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          echo "Building with FOTA_CURRENT_VERSION=${TAG}"
+          sed -i '/^build_flags/a\    -DFOTA_CURRENT_VERSION=\\\"'"${TAG}"'\\\"' platformio.ini
+
+      - name: Build firmware
+        run: pio run -e espidf
+
+      - name: Build LittleFS
+        run: pio run -e espidf --target buildfs
+
+      - name: Rename binaries
+        run: |
+          cp .pio/build/espidf/firmware.bin  .pio/build/espidf/esp-rc-car.bin
+          cp .pio/build/espidf/littlefs.bin  .pio/build/espidf/esp-rc-car-littlefs.bin
+
+      - name: Upload as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: |
+            Code/.pio/build/espidf/esp-rc-car.bin
+            Code/.pio/build/espidf/esp-rc-car-littlefs.bin
+
+      - name: Upload to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            Code/.pio/build/espidf/esp-rc-car.bin
+            Code/.pio/build/espidf/esp-rc-car-littlefs.bin
+
+  # ─────────────────────────────────────────────
+  # 2) Android APK
+  # ─────────────────────────────────────────────
+  build-android:
+    name: Build APK
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: App
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Set up release signing
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/release-keystore.p12
+          {
+            echo "storeFile=release-keystore.p12"
+            echo "storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
+            echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}"
+            echo "keyPassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
+          } > android/key.properties
+
+      - name: Build APK
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          if [ -n "$TAG" ]; then
+            flutter build apk --release --build-name="${TAG#v}" --build-number="${{ github.run_number }}"
+          else
+            flutter build apk --release --build-number="${{ github.run_number }}"
+          fi
+
+      - name: Rename APK
+        run: cp build/app/outputs/flutter-apk/app-release.apk EspRCCar.apk
+
+      - name: Upload as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EspRCCar-APK
+          path: App/EspRCCar.apk
+
+      - name: Upload to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: App/EspRCCar.apk
+
+  # ─────────────────────────────────────────────
+  # 3) iOS IPA (unsigned)
+  # ─────────────────────────────────────────────
+  build-ios:
+    name: Build IPA
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: App
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Install CocoaPods dependencies
+        run: |
+          cd ios
+          pod install
+
+      - name: Build iOS (no codesign)
+        run: flutter build ios --release --no-codesign
+
+      - name: Package IPA
+        run: |
+          mkdir Payload
+          cp -r build/ios/iphoneos/Runner.app Payload/
+          zip -r EspRCCar.ipa Payload
+          rm -rf Payload
+
+      - name: Upload as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EspRCCar-IPA
+          path: App/EspRCCar.ipa
+
+      - name: Upload to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: App/EspRCCar.ipa

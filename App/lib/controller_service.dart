@@ -11,10 +11,10 @@ class ControllerService extends ChangeNotifier {
   double _throttle = 0;
   double _steer = 0;
 
-  // Filtering
+  // Filtering — EMA: out = alpha*new + (1-alpha)*prev. Higher alpha = less smoothing, less lag.
   static const double steerDeadzone = 0.08;
-  static const double steerFilterAlpha = 0.30;
-  static const double throttleFilterAlpha = 0.30;
+  static const double steerFilterAlpha = 0.75;
+  static const double throttleFilterAlpha = 0.70;
   double _steerFilt = 0;
   double _thrFilt = 0;
 
@@ -57,7 +57,9 @@ class ControllerService extends ChangeNotifier {
   }
 
   void _sendControls() {
-    final msg = '${_thrFilt.round()},${_steerFilt.round()},0';
+    if (_connectionService.status != ConnectionStatus.connected) return;
+    // Hardware wiring inverts throttle and steer — flip on wire.
+    final msg = '${(-_thrFilt).round()},${(-_steerFilt).round()},0';
     _connectionService.send(msg);
   }
 
@@ -83,15 +85,19 @@ class ControllerService extends ChangeNotifier {
           final lx = (event['lx'] as num?)?.toDouble() ?? 0.0;
           final r2 = (event['r2'] as num?)?.toDouble() ?? 0.0;
           final l2 = (event['l2'] as num?)?.toDouble() ?? 0.0;
+          final buttonA = event['buttonA'] == true;
 
           final steerAxis = _applyDeadzone(lx);
           final thrAxis = (r2 - l2).clamp(-1.0, 1.0);
 
+          // Emergency stop: A button cuts throttle, leaves steering untouched.
           _steer = steerAxis * maxVal;
-          _throttle = thrAxis * maxVal;
+          _throttle = buttonA ? 0 : thrAxis * maxVal;
         } else {
           _steer = 0;
           _throttle = 0;
+          _steerFilt = 0;
+          _thrFilt = 0;
         }
       },
       onError: (_) {
@@ -110,10 +116,10 @@ class ControllerService extends ChangeNotifier {
       _,
     ) {
       final filteredSteer =
-          steerFilterAlpha * _steerFilt + (1 - steerFilterAlpha) * _steer;
+          steerFilterAlpha * _steer + (1 - steerFilterAlpha) * _steerFilt;
       final filteredThrottle =
-          throttleFilterAlpha * _thrFilt +
-          (1 - throttleFilterAlpha) * _throttle;
+          throttleFilterAlpha * _throttle +
+          (1 - throttleFilterAlpha) * _thrFilt;
 
       final clampedSteer =
           filteredSteer.clamp(-maxVal.toDouble(), maxVal.toDouble());
