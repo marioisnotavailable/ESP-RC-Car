@@ -1,0 +1,70 @@
+# ESP-RC-Car — Protokolltext Teil 2
+## ESP Firmware & Mechanik
+
+---
+
+## Folie 7 — FreeRTOS: 4 Tasks
+
+Die gesamte Firmware des ESP-RC-Cars läuft auf einem **ESP32-S3** unter dem Echtzeitbetriebssystem **FreeRTOS**, das Bestandteil des **ESP-IDF 6.0 Frameworks** von Espressif ist. Anstatt den gesamten Code hintereinander in einer großen Schleife laufen zu lassen, ist die Firmware in vier unabhängige **Tasks** aufgeteilt. Jeder Task läuft quasi gleichzeitig, bekommt seinen eigenen Stapelspeicher zugewiesen und hat eine festgelegte Priorität — je höher die Zahl, desto wichtiger.
+
+Der **motor_task** hat die höchste Priorität 10 und kümmert sich ausschließlich um die Motorsteuerung. Er liest Steuerbefehle aus einer Queue, berechnet die PWM-Signale und überwacht den Gate-Driver auf Fehler. Damit der Motor immer sofort reagiert, darf ihn kein anderer Task unterbrechen.
+
+Der **comms_task** mit Priorität 7 ist für die gesamte Netzwerkkommunikation zuständig: Er baut die WiFi-Verbindung auf, betreibt den WebSocket-Server und startet einen eigenen Sub-Task für die UDP-Geräteerkennung. Alles was mit dem Smartphone kommuniziert, läuft hier.
+
+Der **system_task** mit Priorität 5 übernimmt Verwaltungsaufgaben: Er misst regelmäßig die Batteriespannung über den ADC, lädt und speichert Einstellungen im nichtflüchtigen Speicher (NVS) und prüft beim Booten, ob das Gerät zuvor abgestürzt ist.
+
+Der **bg_task** mit der niedrigsten Priorität 2 läuft im Hintergrund. Er prüft periodisch ob eine neue Firmware-Version auf GitHub verfügbar ist und installiert diese automatisch. Außerdem stellt er eine serielle Konsole für Debugging bereit.
+
+Die Kommunikation zwischen den Tasks erfolgt über sogenannte **Queues**: Der comms_task schreibt empfangene Steuerbefehle in die `cmd_queue`, aus der der motor_task liest. Der system_task schreibt den aktuellen Batteriestand in die `batt_queue`, die der comms_task dann per WebSocket an die App sendet.
+
+---
+
+## Folie 8 — Motor & Gate Driver
+
+Das Herzstück der Motorsteuerung ist der **DRV8323SRTAR** von Texas Instruments — ein Gate-Driver-IC im VQFN-40-Gehäuse, der für Spannungen von 6 bis 60 Volt ausgelegt ist. Er sitzt zwischen dem ESP32 und den sechs N-Kanal-MOSFETs, die die eigentliche 3-Phasen-Halbbrücke bilden, durch die der Strom zum Motor fließt. Der ESP32 selbst kann keine ausreichend hohen Spannungen schalten — der DRV8323 übersetzt die schwachen GPIO-Signale in starke Gate-Impulse für die MOSFETs.
+
+Der Chip wird über **SPI** konfiguriert. Beim Start schreibt die Firmware fünf Register: Den PWM-Modus, die Gate-Ströme für High- und Low-Side, die Überstromschutz-Schwelle und die Verstärkung der Stromshunt-Verstärker. Außerdem hat der DRV einen **nFAULT-Pin** — zieht er diesen auf LOW, weiß der ESP32 sofort, dass ein Fehler aufgetreten ist, zum Beispiel ein Kurzschluss oder Überhitzung.
+
+Der Motor selbst ist ein **brushless DC Motor (BLDC)**, der nach dem Prinzip der **6-Step Trapez-Kommutierung** betrieben wird. Ein BLDC hat drei Phasen (A, B, C), von denen immer genau zwei gleichzeitig bestromt werden — eine als Pluspol, eine als Minuspol. Die dritte Phase ist in diesem Moment stromlos (Float). Durch das schrittweise Durchschalten aller sechs Kombinationen dreht sich das Magnetfeld im Motor und zieht den Rotor mit.
+
+Der ESP32 erzeugt die PWM-Signale über das **LEDC-Modul** des ESP-IDF mit 20 kHz und 10-bit Auflösung. Das gibt 1024 Stufen zwischen Aus und Vollgas. Um den Motor sanft anzufahren und Stromspitzen zu vermeiden, gibt es eine **Soft-Start-Rampe**: Die Duty-Cycle steigt schrittweise um 5 pro Kommutierungsschritt, und die Zeit zwischen den Schritten verkürzt sich von 50 ms bei Stillstand auf 5 ms bei Vollgas. Bei einem Richtungswechsel wird die Rampe sofort zurückgesetzt.
+
+Erkennt der DRV einen Fehler, schaltet die Firmware alle Phasen sofort ab, wartet 500 ms, schreibt alle fünf Register neu und gibt den Motor wieder frei. Wenn das System nach drei Abstürzen in den **Safe Mode** wechselt, wird der motor_task dauerhaft suspendiert — der Motor bleibt aus, bis das Problem per OTA behoben wird.
+
+---
+
+## Folie 9 — Netzwerk & OTA-Updates
+
+Damit die App das Auto finden und steuern kann, braucht der ESP32 eine Netzwerkverbindung. Die WLAN-Zugangsdaten werden einmalig im **NVS** (Non-Volatile Storage) gespeichert — einem speziellen Flash-Bereich, der auch nach einem Neustart erhalten bleibt. Beim Start verbindet sich der ESP32 automatisch mit dem gespeicherten Netzwerk. Verliert er die Verbindung, versucht er es selbständig wieder.
+
+Kann sich der ESP32 nicht verbinden — zum Beispiel weil keine WLAN-Daten hinterlegt sind — öffnet er seinen eigenen **Access Point** unter der Adresse `192.168.4.1`. Die App kann sich dann direkt mit dem Auto verbinden, ohne ein bestehendes Netzwerk zu brauchen.
+
+Das **WebSocket-Protokoll** auf Port 80 ist die eigentliche Steuerschnittstelle. Der ESP32 betreibt einen WebSocket-Server über die `esp_http_server`-Bibliothek des ESP-IDF. Die App sendet 50 Mal pro Sekunde ein JSON-Paket mit Gasstellung und Lenkwinkel. Als Antwort sendet der ESP32 einmal pro Sekunde den aktuellen Batteriestand zurück. Kommt 500 ms kein Paket von der App, setzt der Failsafe-Mechanismus alle Werte auf null — der Motor stoppt automatisch.
+
+Für die Firmware gibt es zwei Wege, ein Update einzuspielen. Der erste ist der **manuelle OTA-Upload** über PlatformIO: Man verbindet sich mit dem Netzwerk, in dem das Auto hängt, und lädt über das Build-Target `espidf_ota` direkt auf das Gerät hoch. Der ESP32 ist unter `esp-rc-car.local` erreichbar, der Upload ist passwortgeschützt.
+
+Der zweite Weg ist vollautomatisch: Der **bg_task** prüft alle fünf Minuten die GitHub-Releases des Projekts. Findet er eine neue Firmware-Datei, lädt er sie herunter, schreibt sie in einen zweiten Flash-Bereich (OTA-Partition) und startet neu. Bootet die neue Firmware erfolgreich, wird sie dauerhaft als aktiv markiert. Schlägt der Start fehl, springt der Bootloader automatisch auf die vorherige Version zurück — das nennt sich **OTA Rollback**.
+
+---
+
+## Folie 10 — Chassis & Mechanik
+
+Das physische Gehäuse des RC-Cars wurde vollständig selbst konstruiert und mit einem **FDM 3D-Drucker** aus PLA gedruckt. Das Design entstand in **Blender** und durchlief insgesamt **acht Iterationen** — von einem ersten groben Entwurf bis hin zum fertigen Chassis V8, das alle Komponenten sauber aufnimmt und genug Stabilität für den Fahrbetrieb bietet. Neben dem Hauptchassis gibt es ein eigens konstruiertes Verbindungsstück (`verbindung v1.stl`), das als Adapter oder Halterung für einzelne Bauteile dient.
+
+Die **Lenkung** übernimmt ein **S0009M 9-Gramm-Mikroservo**. Dieser Servo wird über ein PWM-Signal mit 50 Hz angesteuert, wobei die Pulslänge zwischen 1000 µs (voller Lenkeinschlag links) und 2000 µs (voller Lenkeinschlag rechts) variiert. Der Mittelwert von 1500 µs entspricht der Geradeausstellung.
+
+Der ESP32 berechnet aus dem Lenkwert der App (−1000 bis +1000) direkt die passende Pulslänge. Um ruckartige Bewegungen zu vermeiden, läuft das Signal durch einen **IIR-Tiefpassfilter** — das glättet schnelle Pegeländerungen. Über die gespeicherten Einstellungen lassen sich außerdem Lenkrichtung, Verstärkung und eine Totzone konfigurieren, damit das Servo bei kleinen Joystick-Ausschlägen nicht zuckt.
+
+---
+
+## Folie 11 — Fazit & Demo
+
+Das ESP-RC-Car ist ein vollständig selbst entwickeltes Embedded-System, das Hardware, Firmware und eine Cross-Platform-App zu einem funktionierenden Gesamtsystem verbindet.
+
+Im Bereich **Hardware** wurde ein eigenes PCB in Altium Designer entworfen, das alle Subsysteme auf einer Platine vereint: Energieversorgung, Ladeschaltung, Motorsteuerung und den Mikrocontroller.
+
+Die **Flutter-App** läuft auf Android, iOS und Windows und verbindet sich vollautomatisch mit dem Auto über das lokale Netzwerk — ohne manuelle IP-Eingabe. Sie aktualisiert sich auf Android sogar selbst über GitHub.
+
+Die **ESP-IDF-Firmware** ist klar in vier FreeRTOS-Tasks strukturiert, kommuniziert in Echtzeit über WebSocket und kann sich per GitHub FOTA automatisch selbst aktualisieren. Bei wiederholten Abstürzen schützt ein Crash-Counter den Betrieb durch Safe Mode und OTA Rollback.
+
+Das **Chassis** entstand in acht Konstruktionsiterationen in Blender und wurde aus PLA gedruckt.

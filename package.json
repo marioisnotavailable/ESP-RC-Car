@@ -1,0 +1,1 @@
+{"name":"pptx-gen","version":"1.0.0","private":true,"dependencies":{"jszip":"^3.10.1","pptxgenjs":"^4.0.1"}}
