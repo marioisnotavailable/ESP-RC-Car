@@ -1,11 +1,11 @@
 ---
-source_file: "Fehler PCB.txt"
+source_file: "Esp-RC-Car/Graphify/USB PD IC MOSFET Gate Wired to Wrong Pin.md"
 type: "rationale"
-community: "Community None"
+community: "PCB Power Path Errata"
 tags:
   - graphify/rationale
-  - graphify/INFERRED
-  - community/Community_None
+  - graphify/EXTRACTED
+  - community/PCB_Power_Path_Errata
 ---
 
 # USB PD IC MOSFET Gate Wired to Wrong Pin
@@ -14,4 +14,4 @@ tags:
 - [[PCB Errata  Known Issues]] - `references` [EXTRACTED]
 - [[USB-C PD 12V Power Input]] - `rationale_for` [INFERRED]
 
-#graphify/rationale #graphify/INFERRED #community/Community_None
+#graphify/rationale #graphify/EXTRACTED #community/PCB_Power_Path_Errata

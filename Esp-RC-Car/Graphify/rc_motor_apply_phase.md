@@ -1,11 +1,11 @@
 ---
-source_file: "Code/docs/superpowers/specs/2026-04-13-bldc-motor-test-spin-design.md"
-type: "concept"
-community: "Community None"
+source_file: "Esp-RC-Car/Graphify/6-Step Trapezoidal Commutation.md"
+type: "code"
+community: "BLDC Commutation Design"
 tags:
-  - graphify/concept
+  - graphify/code
   - graphify/EXTRACTED
-  - community/Community_None
+  - community/BLDC_Commutation_Design
 ---
 
 # rc_motor_apply_phase
@@ -13,4 +13,4 @@ tags:
 ## Connections
 - [[6-Step Trapezoidal Commutation]] - `implements` [EXTRACTED]
 
-#graphify/concept #graphify/EXTRACTED #community/Community_None
+#graphify/code #graphify/EXTRACTED #community/BLDC_Commutation_Design

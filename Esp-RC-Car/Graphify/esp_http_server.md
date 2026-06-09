@@ -1,18 +1,16 @@
 ---
-source_file: "docs/superpowers/specs/2026-04-16-littlefs-migration-design.md"
-type: "concept"
-community: "Community None"
+source_file: "Esp-RC-Car/Graphify/comms_task (Prio 7).md"
+type: "code"
+community: "Firmware Tasks & Modules"
 tags:
-  - graphify/concept
+  - graphify/code
   - graphify/EXTRACTED
-  - community/Community_None
+  - community/Firmware_Tasks__Modules
 ---
 
 # esp_http_server
 
 ## Connections
-- [[Static File Handler (catch-all )]] - `conceptually_related_to` [EXTRACTED]
 - [[comms_task (Prio 7)]] - `calls` [EXTRACTED]
-- [[rc_websocket (doc)]] - `conceptually_related_to` [INFERRED]
 
-#graphify/concept #graphify/EXTRACTED #community/Community_None
+#graphify/code #graphify/EXTRACTED #community/Firmware_Tasks__Modules

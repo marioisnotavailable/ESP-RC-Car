@@ -1,18 +1,16 @@
 ---
-source_file: "Code/docs/superpowers/specs/2026-04-16-esp-idf-migration-design.md"
-type: "concept"
-community: "Community None"
+source_file: "Esp-RC-Car/Graphify/rc_steering (doc).md"
+type: "rationale"
+community: "Firmware Tasks & Modules"
 tags:
-  - graphify/concept
+  - graphify/rationale
   - graphify/INFERRED
-  - community/Community_None
+  - community/Firmware_Tasks__Modules
 ---
 
 # GPIO5 Conflict (MISO vs Servo)
 
 ## Connections
-- [[ESP-IDF Migration Design]] - `references` [EXTRACTED]
-- [[rc_pins (doc)]] - `rationale_for` [INFERRED]
 - [[rc_steering (doc)]] - `rationale_for` [INFERRED]
 
-#graphify/concept #graphify/INFERRED #community/Community_None
+#graphify/rationale #graphify/INFERRED #community/Firmware_Tasks__Modules

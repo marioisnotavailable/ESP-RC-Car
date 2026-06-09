@@ -1,19 +1,16 @@
 ---
-source_file: "App/README.md"
+source_file: "Esp-RC-Car/Graphify/UDP Broadcast Discovery.md"
 type: "concept"
-community: "Community None"
+community: "Hardware Concept Notes"
 tags:
   - graphify/concept
   - graphify/INFERRED
-  - community/Community_None
+  - community/Hardware_Concept_Notes
 ---
 
 # TCP Subnet Scan Discovery Fallback
 
 ## Connections
-- [[Default ws192.168.4.181 AP Mode Fallback]] - `semantically_similar_to` [INFERRED]
-- [[ESP-RC Car Controller App README]] - `references` [EXTRACTED]
 - [[UDP Broadcast Discovery]] - `semantically_similar_to` [INFERRED]
-- [[network_info_plus dependency]] - `implements` [INFERRED]
 
-#graphify/concept #graphify/INFERRED #community/Community_None
+#graphify/concept #graphify/INFERRED #community/Hardware_Concept_Notes

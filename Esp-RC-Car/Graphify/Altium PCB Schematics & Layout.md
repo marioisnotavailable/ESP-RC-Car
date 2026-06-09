@@ -1,11 +1,11 @@
 ---
-source_file: "README.md"
-type: "concept"
-community: "Community None"
+source_file: "Esp-RC-Car/Graphify/ESP-RC-Car Project README.md"
+type: "document"
+community: "Hardware Concept Notes"
 tags:
-  - graphify/concept
+  - graphify/document
   - graphify/EXTRACTED
-  - community/Community_None
+  - community/Hardware_Concept_Notes
 ---
 
 # Altium PCB Schematics & Layout
@@ -13,4 +13,4 @@ tags:
 ## Connections
 - [[ESP-RC-Car Project README]] - `references` [EXTRACTED]
 
-#graphify/concept #graphify/EXTRACTED #community/Community_None
+#graphify/document #graphify/EXTRACTED #community/Hardware_Concept_Notes

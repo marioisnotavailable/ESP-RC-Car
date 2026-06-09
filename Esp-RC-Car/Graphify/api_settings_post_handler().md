@@ -1,22 +1,16 @@
 ---
-source_file: "Code/components/rc_comms/rc_comms.c"
+source_file: "Esp-RC-Car/Graphify/rc_settings_save().md"
 type: "code"
-community: "Community None"
-location: "L739"
+community: "Settings Persistence Path"
 tags:
   - graphify/code
-  - graphify/EXTRACTED
-  - community/Community_None
+  - graphify/INFERRED
+  - community/Settings_Persistence_Path
 ---
 
 # api_settings_post_handler()
 
 ## Connections
-- [[get_param()]] - `calls` [EXTRACTED]
-- [[json_fail()]] - `calls` [EXTRACTED]
-- [[json_ok()]] - `calls` [EXTRACTED]
-- [[rc_comms.c]] - `contains` [EXTRACTED]
 - [[rc_settings_save()]] - `calls` [INFERRED]
-- [[recv_body()]] - `calls` [EXTRACTED]
 
-#graphify/code #graphify/EXTRACTED #community/Community_None
+#graphify/code #graphify/INFERRED #community/Settings_Persistence_Path

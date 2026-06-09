@@ -1,17 +1,16 @@
 ---
-source_file: "SchaltungSkizze.png"
+source_file: "Esp-RC-Car/Graphify/ESP (ESP32 microcontroller - main controller).md"
 type: "concept"
-community: "Community None"
+community: "Power & Control Schematic"
 tags:
   - graphify/concept
   - graphify/EXTRACTED
-  - community/Community_None
+  - community/Power__Control_Schematic
 ---
 
 # PWM signal line to servo
 
 ## Connections
 - [[ESP (ESP32 microcontroller - main controller)]] - `implements` [EXTRACTED]
-- [[Servo (steering servo, driven by PWM)]] - `shares_data_with` [EXTRACTED]
 
-#graphify/concept #graphify/EXTRACTED #community/Community_None
+#graphify/concept #graphify/EXTRACTED #community/Power__Control_Schematic

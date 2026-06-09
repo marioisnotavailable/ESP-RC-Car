@@ -1,21 +1,16 @@
 ---
-source_file: "Code/.claude/settings.json"
+source_file: "Esp-RC-Car/Graphify/claude-mem@thedotmack.md"
 type: "code"
-community: "Community None"
-location: "L2"
+community: "Claude Plugin Listing"
 tags:
   - graphify/code
   - graphify/EXTRACTED
-  - community/Community_None
+  - community/Claude_Plugin_Listing
 ---
 
 # enabledPlugins
 
 ## Connections
-- [[caveman@caveman]] - `contains` [EXTRACTED]
-- [[claude-mem@thedotmack]] - `contains` [EXTRACTED]
-- [[obsidian@obsidian-skills]] - `contains` [EXTRACTED]
-- [[settings.json]] - `contains` [EXTRACTED]
-- [[superpowers@claude-plugins-official]] - `contains` [EXTRACTED]
+- [[claude-mem@thedotmack]] - `references` [EXTRACTED]
 
-#graphify/code #graphify/EXTRACTED #community/Community_None
+#graphify/code #graphify/EXTRACTED #community/Claude_Plugin_Listing

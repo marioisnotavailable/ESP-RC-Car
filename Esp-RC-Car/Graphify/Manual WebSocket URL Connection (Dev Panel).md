@@ -1,11 +1,11 @@
 ---
-source_file: "App/README.md"
+source_file: "Esp-RC-Car/Graphify/Manual WebSocket URL Connection (Dev Panel).md"
 type: "concept"
-community: "Community None"
+community: "Hardware Concept Notes"
 tags:
   - graphify/concept
   - graphify/EXTRACTED
-  - community/Community_None
+  - community/Hardware_Concept_Notes
 ---
 
 # Manual WebSocket URL Connection (Dev Panel)
@@ -13,4 +13,4 @@ tags:
 ## Connections
 - [[ESP-RC Car Controller App README]] - `references` [EXTRACTED]
 
-#graphify/concept #graphify/EXTRACTED #community/Community_None
+#graphify/concept #graphify/EXTRACTED #community/Hardware_Concept_Notes

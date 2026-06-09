@@ -1,17 +1,16 @@
 ---
-source_file: "README.md"
+source_file: "Esp-RC-Car/Graphify/ESP-RC-Car Project README.md"
 type: "concept"
-community: "Community None"
+community: "Hardware Concept Notes"
 tags:
   - graphify/concept
   - graphify/EXTRACTED
-  - community/Community_None
+  - community/Hardware_Concept_Notes
 ---
 
 # WebSocket Phone-Car Communication
 
 ## Connections
-- [[Automatic WebSocket Reconnection]] - `conceptually_related_to` [INFERRED]
 - [[ESP-RC-Car Project README]] - `references` [EXTRACTED]
 
-#graphify/concept #graphify/EXTRACTED #community/Community_None
+#graphify/concept #graphify/EXTRACTED #community/Hardware_Concept_Notes

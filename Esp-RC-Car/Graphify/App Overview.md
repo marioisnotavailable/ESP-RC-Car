@@ -1,20 +1,16 @@
 ---
-source_file: "Esp-RC-Car/App/App Overview.md"
+source_file: "Esp-RC-Car/Graphify/00 Overview.md"
 type: "document"
-community: "Community None"
+community: "Firmware Tasks & Modules"
 tags:
   - graphify/document
   - graphify/EXTRACTED
-  - community/Community_None
+  - community/Firmware_Tasks__Modules
 ---
 
 # App Overview
 
 ## Connections
 - [[00 Overview]] - `references` [EXTRACTED]
-- [[ConnectionService_1]] - `references` [EXTRACTED]
-- [[ControllerService_1]] - `references` [EXTRACTED]
-- [[Flutter]] - `conceptually_related_to` [INFERRED]
-- [[Flutter Provider (state)]] - `conceptually_related_to` [INFERRED]
 
-#graphify/document #graphify/EXTRACTED #community/Community_None
+#graphify/document #graphify/EXTRACTED #community/Firmware_Tasks__Modules

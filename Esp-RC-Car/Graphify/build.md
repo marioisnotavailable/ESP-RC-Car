@@ -1,16 +1,16 @@
 ---
-source_file: "App/lib/main.dart"
+source_file: "Esp-RC-Car/Graphify/build.md"
 type: "code"
-community: "Community None"
+community: "Flutter Main Build"
 tags:
   - graphify/code
   - graphify/EXTRACTED
-  - community/Community_None
+  - community/Flutter_Main_Build
 ---
 
 # build
 
 ## Connections
-- [[main.dart]] - `defines` [EXTRACTED]
+- [[main.dart]] - `references` [EXTRACTED]
 
-#graphify/code #graphify/EXTRACTED #community/Community_None
+#graphify/code #graphify/EXTRACTED #community/Flutter_Main_Build

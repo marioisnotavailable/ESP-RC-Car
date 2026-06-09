@@ -1,18 +1,18 @@
 ---
-source_file: "Code/managed_components/esp_littlefs/src/esp_littlefs.c"
+source_file: "Esp-RC-Car/Graphify/esp_littlefs_mounted().md"
 type: "code"
-community: "Community None"
+community: "LittleFS Filesystem Layer"
 location: "L303"
 tags:
   - graphify/code
   - graphify/EXTRACTED
-  - community/Community_None
+  - community/LittleFS_Filesystem_Layer
 ---
 
 # esp_littlefs_mounted()
 
 ## Connections
-- [[esp_littlefs.c]] - `contains` [EXTRACTED]
+- [[esp_littlefs.c]] - `references` [EXTRACTED]
 - [[esp_littlefs_by_label()]] - `calls` [EXTRACTED]
 
-#graphify/code #graphify/EXTRACTED #community/Community_None
+#graphify/code #graphify/EXTRACTED #community/LittleFS_Filesystem_Layer

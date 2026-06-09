@@ -1,17 +1,17 @@
 ---
-source_file: "Code/managed_components/esp_littlefs/library.json"
+source_file: ".obsidian/plugins/obsidian-local-rest-api/manifest.json"
 type: "code"
-community: "Community None"
-location: "L4"
+community: "Plugin Manifest Metadata"
+location: "L6"
 tags:
   - graphify/code
   - graphify/EXTRACTED
-  - community/Community_None
+  - community/Plugin_Manifest_Metadata
 ---
 
 # description
 
 ## Connections
-- [[library.json]] - `contains` [EXTRACTED]
+- [[manifest.json]] - `contains` [EXTRACTED]
 
-#graphify/code #graphify/EXTRACTED #community/Community_None
+#graphify/code #graphify/EXTRACTED #community/Plugin_Manifest_Metadata

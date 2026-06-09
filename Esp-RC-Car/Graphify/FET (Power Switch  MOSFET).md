@@ -1,11 +1,11 @@
 ---
-source_file: "Powersystem.png"
+source_file: "Esp-RC-Car/Graphify/FET (Power Switch  MOSFET).md"
 type: "concept"
-community: "Community None"
+community: "Power Electronics Concepts"
 tags:
   - graphify/concept
   - graphify/EXTRACTED
-  - community/Community_None
+  - community/Power_Electronics_Concepts
 ---
 
 # FET (Power Switch / MOSFET)
@@ -16,4 +16,4 @@ tags:
 - [[Power System Diagram (hand-drawn)]] - `references` [EXTRACTED]
 - [[VR (Voltage Regulator)]] - `shares_data_with` [INFERRED]
 
-#graphify/concept #graphify/EXTRACTED #community/Community_None
+#graphify/concept #graphify/EXTRACTED #community/Power_Electronics_Concepts

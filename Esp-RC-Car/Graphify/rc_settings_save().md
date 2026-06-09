@@ -1,18 +1,18 @@
 ---
-source_file: "Code/components/rc_system/rc_system.c"
+source_file: "Esp-RC-Car/Graphify/rc_settings_save().md"
 type: "code"
-community: "Community None"
+community: "Settings Persistence Path"
 location: "L84"
 tags:
   - graphify/code
   - graphify/INFERRED
-  - community/Community_None
+  - community/Settings_Persistence_Path
 ---
 
 # rc_settings_save()
 
 ## Connections
 - [[api_settings_post_handler()]] - `calls` [INFERRED]
-- [[rc_system.c]] - `contains` [EXTRACTED]
+- [[rc_system.c]] - `references` [EXTRACTED]
 
-#graphify/code #graphify/INFERRED #community/Community_None
+#graphify/code #graphify/INFERRED #community/Settings_Persistence_Path

@@ -1,14 +1,17 @@
 ---
-source_file: "Code/.claude/settings.local.json"
+source_file: ".claude/settings.local.json"
 type: "code"
-community: "Community None"
+community: "Project Settings Permissions"
 location: "L1"
 tags:
   - graphify/code
   - graphify/EXTRACTED
-  - community/Community_None
+  - community/Project_Settings_Permissions
 ---
 
 # settings.local.json
 
-#graphify/code #graphify/EXTRACTED #community/Community_None
+## Connections
+- [[permissions]] - `contains` [EXTRACTED]
+
+#graphify/code #graphify/EXTRACTED #community/Project_Settings_Permissions

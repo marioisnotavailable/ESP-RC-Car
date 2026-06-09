@@ -1,17 +1,16 @@
 ---
-source_file: "SchaltungSkizze.png"
+source_file: "Esp-RC-Car/Graphify/ESP (ESP32 microcontroller - main controller).md"
 type: "concept"
-community: "Community None"
+community: "Power & Control Schematic"
 tags:
   - graphify/concept
   - graphify/EXTRACTED
-  - community/Community_None
+  - community/Power__Control_Schematic
 ---
 
 # PWM/SPI signal line to ESC
 
 ## Connections
-- [[ESC (Electronic Speed Controller for motor)]] - `shares_data_with` [EXTRACTED]
 - [[ESP (ESP32 microcontroller - main controller)]] - `implements` [EXTRACTED]
 
-#graphify/concept #graphify/EXTRACTED #community/Community_None
+#graphify/concept #graphify/EXTRACTED #community/Power__Control_Schematic

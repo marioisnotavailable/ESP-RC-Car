@@ -1,17 +1,17 @@
 ---
-source_file: "Code/boards/esp32s3wroom2.json"
+source_file: "Esp-RC-Car/Graphify/flash_size.md"
 type: "code"
-community: "Community None"
+community: "Flash Upload Config"
 location: "L47"
 tags:
   - graphify/code
   - graphify/EXTRACTED
-  - community/Community_None
+  - community/Flash_Upload_Config
 ---
 
 # flash_size
 
 ## Connections
-- [[upload]] - `contains` [EXTRACTED]
+- [[upload]] - `references` [EXTRACTED]
 
-#graphify/code #graphify/EXTRACTED #community/Community_None
+#graphify/code #graphify/EXTRACTED #community/Flash_Upload_Config

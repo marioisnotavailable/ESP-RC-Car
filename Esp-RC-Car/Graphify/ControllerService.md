@@ -1,17 +1,16 @@
 ---
-source_file: "App/lib/controller_service.dart"
-type: "code"
-community: "Community None"
+source_file: "Esp-RC-Car/App/App Overview.md"
+type: "concept"
+community: "Vault MOC & Top Notes"
 tags:
-  - graphify/code
+  - graphify/concept
   - graphify/EXTRACTED
-  - community/Community_None
+  - community/Vault_MOC__Top_Notes
 ---
 
 # ControllerService
 
 ## Connections
-- [[ControllerService_1]] - `documents` [INFERRED]
-- [[controller_service.dart]] - `defines` [EXTRACTED]
+- [[App Overview_2]] - `references` [EXTRACTED]
 
-#graphify/code #graphify/EXTRACTED #community/Community_None
+#graphify/concept #graphify/EXTRACTED #community/Vault_MOC__Top_Notes

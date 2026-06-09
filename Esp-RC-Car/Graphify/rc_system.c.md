@@ -1,25 +1,16 @@
 ---
-source_file: "Code/components/rc_system/rc_system.c"
+source_file: "Esp-RC-Car/Graphify/rc_settings_save().md"
 type: "code"
-community: "Community None"
-location: "L1"
+community: "Settings Persistence Path"
 tags:
   - graphify/code
   - graphify/EXTRACTED
-  - community/Community_None
+  - community/Settings_Persistence_Path
 ---
 
 # rc_system.c
 
 ## Connections
-- [[adc_init()]] - `contains` [EXTRACTED]
-- [[rc_recovery_check()]] - `contains` [EXTRACTED]
-- [[rc_recovery_mark_stable()]] - `contains` [EXTRACTED]
-- [[rc_settings_load()]] - `contains` [EXTRACTED]
-- [[rc_settings_save()]] - `contains` [EXTRACTED]
-- [[read_battery_percent()]] - `contains` [EXTRACTED]
-- [[steering_apply()]] - `contains` [EXTRACTED]
-- [[steering_init()]] - `contains` [EXTRACTED]
-- [[system_task()]] - `contains` [EXTRACTED]
+- [[rc_settings_save()]] - `references` [EXTRACTED]
 
-#graphify/code #graphify/EXTRACTED #community/Community_None
+#graphify/code #graphify/EXTRACTED #community/Settings_Persistence_Path

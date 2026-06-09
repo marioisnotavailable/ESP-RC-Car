@@ -1,19 +1,16 @@
 ---
-source_file: "README.md"
+source_file: "Esp-RC-Car/Graphify/ESP-RC-Car Project README.md"
 type: "concept"
-community: "Community None"
+community: "Hardware Concept Notes"
 tags:
   - graphify/concept
-  - graphify/INFERRED
-  - community/Community_None
+  - graphify/EXTRACTED
+  - community/Hardware_Concept_Notes
 ---
 
 # Battery Management Subsystem (BMS + Charging + Balancing)
 
 ## Connections
-- [[Battery Load IC Pin 12 Not Connected]] - `rationale_for` [INFERRED]
-- [[Battery Voltage Divider on Non-ADC Pin]] - `rationale_for` [INFERRED]
-- [[Charging IC Inductor on Wrong Pin (BSD vs SW)]] - `rationale_for` [INFERRED]
 - [[ESP-RC-Car Project README]] - `references` [EXTRACTED]
 
-#graphify/concept #graphify/INFERRED #community/Community_None
+#graphify/concept #graphify/EXTRACTED #community/Hardware_Concept_Notes

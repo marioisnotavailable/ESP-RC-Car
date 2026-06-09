@@ -1,18 +1,16 @@
 ---
-source_file: "App/pubspec.yaml"
+source_file: "Esp-RC-Car/Graphify/UDP Broadcast Discovery.md"
 type: "concept"
-community: "Community None"
+community: "Hardware Concept Notes"
 tags:
   - graphify/concept
   - graphify/INFERRED
-  - community/Community_None
+  - community/Hardware_Concept_Notes
 ---
 
 # network_info_plus dependency
 
 ## Connections
-- [[Flutter App pubspec.yaml]] - `references` [EXTRACTED]
-- [[TCP Subnet Scan Discovery Fallback]] - `implements` [INFERRED]
 - [[UDP Broadcast Discovery]] - `implements` [INFERRED]
 
-#graphify/concept #graphify/INFERRED #community/Community_None
+#graphify/concept #graphify/INFERRED #community/Hardware_Concept_Notes

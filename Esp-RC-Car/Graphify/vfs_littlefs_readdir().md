@@ -1,18 +1,16 @@
 ---
-source_file: "Code/managed_components/esp_littlefs/src/esp_littlefs.c"
+source_file: "Esp-RC-Car/Graphify/vfs_littlefs_readdir_r().md"
 type: "code"
-community: "Community None"
-location: "L2114"
+community: "LittleFS Filesystem Layer"
 tags:
   - graphify/code
   - graphify/EXTRACTED
-  - community/Community_None
+  - community/LittleFS_Filesystem_Layer
 ---
 
 # vfs_littlefs_readdir()
 
 ## Connections
-- [[esp_littlefs.c]] - `contains` [EXTRACTED]
 - [[vfs_littlefs_readdir_r()]] - `calls` [EXTRACTED]
 
-#graphify/code #graphify/EXTRACTED #community/Community_None
+#graphify/code #graphify/EXTRACTED #community/LittleFS_Filesystem_Layer

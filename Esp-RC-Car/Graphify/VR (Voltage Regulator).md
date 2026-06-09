@@ -1,18 +1,16 @@
 ---
-source_file: "Powersystem.png"
+source_file: "Esp-RC-Car/Graphify/FET (Power Switch  MOSFET).md"
 type: "concept"
-community: "Community None"
+community: "Power Electronics Concepts"
 tags:
   - graphify/concept
-  - graphify/EXTRACTED
-  - community/Community_None
+  - graphify/INFERRED
+  - community/Power_Electronics_Concepts
 ---
 
 # VR (Voltage Regulator)
 
 ## Connections
-- [[ESP32 Microcontroller]] - `shares_data_with` [EXTRACTED]
 - [[FET (Power Switch  MOSFET)]] - `shares_data_with` [INFERRED]
-- [[Power System Diagram (hand-drawn)]] - `references` [EXTRACTED]
 
-#graphify/concept #graphify/EXTRACTED #community/Community_None
+#graphify/concept #graphify/INFERRED #community/Power_Electronics_Concepts

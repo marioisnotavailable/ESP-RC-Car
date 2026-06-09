@@ -1,22 +1,16 @@
 ---
-source_file: "Code/components/rc_motor/drv8323.c"
+source_file: "Esp-RC-Car/Graphify/drv8323.c.md"
 type: "code"
-community: "Community None"
-location: "L101"
+community: "Firmware Tasks & Modules"
 tags:
   - graphify/code
   - graphify/EXTRACTED
-  - community/Community_None
+  - community/Firmware_Tasks__Modules
 ---
 
 # drv8323_read_reg()
 
 ## Connections
-- [[drv8323 (doc)]] - `documents` [INFERRED]
-- [[drv8323.c]] - `contains` [EXTRACTED]
-- [[drv8323_init()]] - `calls` [EXTRACTED]
-- [[drv8323_read_fault1()]] - `calls` [EXTRACTED]
-- [[drv8323_read_fault2()]] - `calls` [EXTRACTED]
-- [[motor_task()]] - `calls` [INFERRED]
+- [[drv8323.c]] - `references` [EXTRACTED]
 
-#graphify/code #graphify/EXTRACTED #community/Community_None
+#graphify/code #graphify/EXTRACTED #community/Firmware_Tasks__Modules

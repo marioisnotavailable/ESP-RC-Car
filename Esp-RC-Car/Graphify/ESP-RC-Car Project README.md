@@ -1,11 +1,11 @@
 ---
-source_file: "README.md"
+source_file: "Esp-RC-Car/Graphify/ESP-RC-Car Project README.md"
 type: "document"
-community: "Community None"
+community: "Hardware Concept Notes"
 tags:
   - graphify/document
   - graphify/EXTRACTED
-  - community/Community_None
+  - community/Hardware_Concept_Notes
 ---
 
 # ESP-RC-Car Project README
@@ -19,4 +19,4 @@ tags:
 - [[PlatformIO Firmware Stack]] - `references` [EXTRACTED]
 - [[WebSocket Phone-Car Communication]] - `references` [EXTRACTED]
 
-#graphify/document #graphify/EXTRACTED #community/Community_None
+#graphify/document #graphify/EXTRACTED #community/Hardware_Concept_Notes

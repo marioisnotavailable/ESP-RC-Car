@@ -1,16 +1,16 @@
 ---
-source_file: "App/lib/ui/gamepad_status.dart"
+source_file: "Esp-RC-Car/Graphify/_buildThrottleIndicator.md"
 type: "code"
-community: "Community None"
+community: "App Telemetry Widgets"
 tags:
   - graphify/code
   - graphify/EXTRACTED
-  - community/Community_None
+  - community/App_Telemetry_Widgets
 ---
 
 # _buildThrottleIndicator
 
 ## Connections
-- [[gamepad_status.dart]] - `defines` [EXTRACTED]
+- [[gamepad_status.dart]] - `references` [EXTRACTED]
 
-#graphify/code #graphify/EXTRACTED #community/Community_None
+#graphify/code #graphify/EXTRACTED #community/App_Telemetry_Widgets

@@ -1,22 +1,16 @@
 ---
-source_file: "Code/managed_components/esp_littlefs/library.json"
+source_file: "Esp-RC-Car/Graphify/build_4.md"
 type: "code"
-community: "Community None"
-location: "L1"
+community: "PlatformIO Build Config"
 tags:
   - graphify/code
   - graphify/EXTRACTED
-  - community/Community_None
+  - community/PlatformIO_Build_Config
 ---
 
 # library.json
 
 ## Connections
-- [[build_4]] - `contains` [EXTRACTED]
-- [[description]] - `contains` [EXTRACTED]
-- [[frameworks]] - `contains` [EXTRACTED]
-- [[name]] - `contains` [EXTRACTED]
-- [[platforms]] - `contains` [EXTRACTED]
-- [[version]] - `contains` [EXTRACTED]
+- [[build (library.json)]] - `references` [EXTRACTED]
 
-#graphify/code #graphify/EXTRACTED #community/Community_None
+#graphify/code #graphify/EXTRACTED #community/PlatformIO_Build_Config

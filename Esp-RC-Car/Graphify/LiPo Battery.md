@@ -1,19 +1,16 @@
 ---
-source_file: "Powersystem.png"
+source_file: "Esp-RC-Car/Graphify/FET (Power Switch  MOSFET).md"
 type: "concept"
-community: "Community None"
+community: "Power Electronics Concepts"
 tags:
   - graphify/concept
   - graphify/EXTRACTED
-  - community/Community_None
+  - community/Power_Electronics_Concepts
 ---
 
 # LiPo Battery
 
 ## Connections
-- [[Charger (12V input)]] - `shares_data_with` [INFERRED]
 - [[FET (Power Switch  MOSFET)]] - `shares_data_with` [EXTRACTED]
-- [[Power System Diagram (hand-drawn)]] - `references` [EXTRACTED]
-- [[V_bat (Battery Voltage Sense)]] - `shares_data_with` [INFERRED]
 
-#graphify/concept #graphify/EXTRACTED #community/Community_None
+#graphify/concept #graphify/EXTRACTED #community/Power_Electronics_Concepts

@@ -1,11 +1,11 @@
 ---
-source_file: "Esp-RC-Car/Firmware/rc_settings.md"
+source_file: "Esp-RC-Car/Graphify/rc_settings (doc).md"
 type: "concept"
-community: "Community None"
+community: "Firmware Tasks & Modules"
 tags:
   - graphify/concept
   - graphify/INFERRED
-  - community/Community_None
+  - community/Firmware_Tasks__Modules
 ---
 
 # ESP-IDF NVS
@@ -13,4 +13,4 @@ tags:
 ## Connections
 - [[rc_settings (doc)]] - `conceptually_related_to` [INFERRED]
 
-#graphify/concept #graphify/INFERRED #community/Community_None
+#graphify/concept #graphify/INFERRED #community/Firmware_Tasks__Modules

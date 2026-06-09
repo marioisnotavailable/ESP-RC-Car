@@ -1,18 +1,16 @@
 ---
-source_file: "README.md"
+source_file: "Esp-RC-Car/Graphify/ESP-RC-Car Project README.md"
 type: "concept"
-community: "Community None"
+community: "Hardware Concept Notes"
 tags:
   - graphify/concept
-  - graphify/INFERRED
-  - community/Community_None
+  - graphify/EXTRACTED
+  - community/Hardware_Concept_Notes
 ---
 
 # Mini1410 2500kv Brushless Motor
 
 ## Connections
-- [[17.5T 5500KV Brushless Motor]] - `semantically_similar_to` [INFERRED]
-- [[DRV8323SRTAR Motor Driver]] - `shares_data_with` [INFERRED]
 - [[ESP-RC-Car Project README]] - `references` [EXTRACTED]
 
-#graphify/concept #graphify/INFERRED #community/Community_None
+#graphify/concept #graphify/EXTRACTED #community/Hardware_Concept_Notes

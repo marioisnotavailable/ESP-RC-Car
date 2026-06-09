@@ -1,35 +1,17 @@
 ---
-source_file: "App/lib/ui/dev_panel.dart"
+source_file: "Esp-RC-Car/Graphify/Padding_1.md"
 type: "code"
-community: "Community None"
+community: "Flutter Main Build"
 tags:
   - graphify/code
   - graphify/EXTRACTED
-  - community/Community_None
+  - community/Flutter_Main_Build
 ---
 
 # dev_panel.dart
 
 ## Connections
-- [[Color]] - `defines` [EXTRACTED]
-- [[ConnectionStatusView]] - `defines` [EXTRACTED]
-- [[DevPanel]] - `defines` [EXTRACTED]
-- [[Padding_1]] - `defines` [EXTRACTED]
-- [[Row]] - `defines` [EXTRACTED]
-- [[SizedBox_1]] - `defines` [EXTRACTED]
-- [[Spacer]] - `defines` [EXTRACTED]
-- [[_DevPanelState]] - `defines` [EXTRACTED]
-- [[_batteryColor]] - `defines` [EXTRACTED]
-- [[_batteryIcon]] - `defines` [EXTRACTED]
-- [[_batteryPercentText]] - `defines` [EXTRACTED]
-- [[_batteryTextColor]] - `defines` [EXTRACTED]
-- [[_buildBatteryIndicator]] - `defines` [EXTRACTED]
-- [[_scanMethodText]] - `defines` [EXTRACTED]
-- [[build_3]] - `defines` [EXTRACTED]
-- [[dispose_2]] - `defines` [EXTRACTED]
-- [[initState_1]] - `defines` [EXTRACTED]
-- [[packageesp_rc_carconnection_service.dart]] - `imports` [EXTRACTED]
-- [[packagefluttermaterial.dart]] - `imports` [EXTRACTED]
-- [[packageproviderprovider.dart]] - `imports` [EXTRACTED]
+- [[Padding (1)]] - `references` [EXTRACTED]
+- [[packageproviderprovider.dart]] - `references` [EXTRACTED]
 
-#graphify/code #graphify/EXTRACTED #community/Community_None
+#graphify/code #graphify/EXTRACTED #community/Flutter_Main_Build

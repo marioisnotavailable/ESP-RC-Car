@@ -1,20 +1,16 @@
 ---
-source_file: "App/AppWithDev.png"
+source_file: "Esp-RC-Car/Graphify/WebSocket URL Input Field (ws192.168.4.181).md"
 type: "concept"
-community: "Community None"
+community: "Dev Panel WebSocket UI"
 tags:
   - graphify/concept
   - graphify/EXTRACTED
-  - community/Community_None
+  - community/Dev_Panel_WebSocket_UI
 ---
 
 # Developer Panel (expanded URL/connection controls)
 
 ## Connections
-- [[CollapseExpand Toggle (chevron)]] - `references` [EXTRACTED]
-- [[Connect Button]] - `references` [EXTRACTED]
-- [[RC Car Controller App - Developer View Screenshot]] - `references` [EXTRACTED]
-- [[Search Button]] - `references` [EXTRACTED]
 - [[WebSocket URL Input Field (ws192.168.4.181)]] - `references` [EXTRACTED]
 
-#graphify/concept #graphify/EXTRACTED #community/Community_None
+#graphify/concept #graphify/EXTRACTED #community/Dev_Panel_WebSocket_UI

@@ -1,18 +1,16 @@
 ---
-source_file: "Esp-RC-Car/Firmware/rc_recovery.md"
+source_file: "Esp-RC-Car/Graphify/00 Overview.md"
 type: "document"
-community: "Community None"
+community: "Firmware Tasks & Modules"
 tags:
   - graphify/document
   - graphify/EXTRACTED
-  - community/Community_None
+  - community/Firmware_Tasks__Modules
 ---
 
 # rc_recovery (doc)
 
 ## Connections
 - [[00 Overview]] - `references` [EXTRACTED]
-- [[Firmware Overview]] - `references` [EXTRACTED]
-- [[rc_ota (doc)]] - `references` [EXTRACTED]
 
-#graphify/document #graphify/EXTRACTED #community/Community_None
+#graphify/document #graphify/EXTRACTED #community/Firmware_Tasks__Modules

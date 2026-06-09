@@ -1,11 +1,11 @@
 ---
-source_file: "App/README.md"
+source_file: "Esp-RC-Car/Graphify/UDP Broadcast Discovery.md"
 type: "concept"
-community: "Community None"
+community: "Hardware Concept Notes"
 tags:
   - graphify/concept
   - graphify/INFERRED
-  - community/Community_None
+  - community/Hardware_Concept_Notes
 ---
 
 # UDP Broadcast Discovery
@@ -15,4 +15,4 @@ tags:
 - [[TCP Subnet Scan Discovery Fallback]] - `semantically_similar_to` [INFERRED]
 - [[network_info_plus dependency]] - `implements` [INFERRED]
 
-#graphify/concept #graphify/INFERRED #community/Community_None
+#graphify/concept #graphify/INFERRED #community/Hardware_Concept_Notes

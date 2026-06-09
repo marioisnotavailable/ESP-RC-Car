@@ -1,18 +1,16 @@
 ---
-source_file: "Bestellliste.txt"
+source_file: "Esp-RC-Car/Graphify/USB PD IC MOSFET Gate Wired to Wrong Pin.md"
 type: "concept"
-community: "Community None"
+community: "PCB Power Path Errata"
 tags:
   - graphify/concept
   - graphify/INFERRED
-  - community/Community_None
+  - community/PCB_Power_Path_Errata
 ---
 
 # USB-C PD 12V Power Input
 
 ## Connections
-- [[Bill of Materials (Bestellliste)]] - `references` [EXTRACTED]
-- [[Missing USB PD Voltage ADC]] - `rationale_for` [INFERRED]
 - [[USB PD IC MOSFET Gate Wired to Wrong Pin]] - `rationale_for` [INFERRED]
 
-#graphify/concept #graphify/INFERRED #community/Community_None
+#graphify/concept #graphify/INFERRED #community/PCB_Power_Path_Errata

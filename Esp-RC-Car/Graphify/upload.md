@@ -1,22 +1,16 @@
 ---
-source_file: "Code/boards/esp32s3wroom2.json"
+source_file: "Esp-RC-Car/Graphify/flash_size.md"
 type: "code"
-community: "Community None"
-location: "L46"
+community: "Flash Upload Config"
 tags:
   - graphify/code
   - graphify/EXTRACTED
-  - community/Community_None
+  - community/Flash_Upload_Config
 ---
 
 # upload
 
 ## Connections
-- [[esp32s3wroom2.json]] - `contains` [EXTRACTED]
-- [[flash_size]] - `contains` [EXTRACTED]
-- [[maximum_ram_size]] - `contains` [EXTRACTED]
-- [[maximum_size]] - `contains` [EXTRACTED]
-- [[require_upload_port]] - `contains` [EXTRACTED]
-- [[speed]] - `contains` [EXTRACTED]
+- [[flash_size]] - `references` [EXTRACTED]
 
-#graphify/code #graphify/EXTRACTED #community/Community_None
+#graphify/code #graphify/EXTRACTED #community/Flash_Upload_Config

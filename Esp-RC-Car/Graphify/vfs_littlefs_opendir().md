@@ -1,23 +1,16 @@
 ---
-source_file: "Code/managed_components/esp_littlefs/src/esp_littlefs.c"
+source_file: "Esp-RC-Car/Graphify/esp_littlefs_calloc().md"
 type: "code"
-community: "Community None"
-location: "L2050"
+community: "LittleFS Filesystem Layer"
 tags:
   - graphify/code
   - graphify/EXTRACTED
-  - community/Community_None
+  - community/LittleFS_Filesystem_Layer
 ---
 
 # vfs_littlefs_opendir()
 
 ## Connections
-- [[esp_littlefs.c]] - `contains` [EXTRACTED]
 - [[esp_littlefs_calloc()]] - `calls` [EXTRACTED]
-- [[esp_littlefs_dir_free()]] - `calls` [EXTRACTED]
-- [[esp_littlefs_errno()]] - `calls` [EXTRACTED]
-- [[lfs_errno_remap()]] - `calls` [EXTRACTED]
-- [[sem_give()]] - `calls` [EXTRACTED]
-- [[sem_take()]] - `calls` [EXTRACTED]
 
-#graphify/code #graphify/EXTRACTED #community/Community_None
+#graphify/code #graphify/EXTRACTED #community/LittleFS_Filesystem_Layer

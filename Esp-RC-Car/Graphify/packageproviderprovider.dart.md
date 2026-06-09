@@ -1,17 +1,17 @@
 ---
-source_file: "App/lib/ui/dev_panel.dart"
+source_file: "Esp-RC-Car/Graphify/packageproviderprovider.dart.md"
 type: "code"
-community: "Community None"
+community: "Flutter Main Build"
 tags:
   - graphify/code
   - graphify/EXTRACTED
-  - community/Community_None
+  - community/Flutter_Main_Build
 ---
 
 # package:provider/provider.dart
 
 ## Connections
-- [[dev_panel.dart]] - `imports` [EXTRACTED]
-- [[main.dart]] - `imports` [EXTRACTED]
+- [[dev_panel.dart]] - `references` [EXTRACTED]
+- [[main.dart]] - `references` [EXTRACTED]
 
-#graphify/code #graphify/EXTRACTED #community/Community_None
+#graphify/code #graphify/EXTRACTED #community/Flutter_Main_Build
