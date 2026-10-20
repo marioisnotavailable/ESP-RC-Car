@@ -11,9 +11,14 @@
 // Default-PDOs (5 V/1.5 A, 12 V/3 A) und loest eine Neuverhandlung aus.
 
 typedef struct {
+    bool     cable_attached; // CC-Attach erkannt (PORT_STATUS_1 Bit 0)
     bool     attached;       // PD-Vertrag aktiv (RDO object position != 0)
-    uint8_t  object_pos;     // Index im Source-Angebot des Netzteils, 0 = kein Vertrag
-    uint16_t voltage_mv;     // gemessene VBUS-Spannung (ADC)
+    bool     cap_mismatch;   // Source konnte gewuenschtes Sink-PDO nicht erfuellen (RDO Bit 26)
+    uint8_t  object_pos;     // Index im Source-Angebot des Netzteils (1..7), 0 = kein Vertrag
+    uint8_t  pe_fsm;         // Policy Engine State (0x18 = PE_SNK_READY)
+    uint16_t op_current_ma;  // Ausgehandelter Betriebsstrom laut RDO (mA)
+    uint16_t max_current_ma; // Maximalstrom laut RDO (mA)
+    uint16_t voltage_mv;     // Gemessene VBUS-Spannung (ADC in mV)
 } rc_pd_status_t;
 
 esp_err_t rc_pd_init(void);
