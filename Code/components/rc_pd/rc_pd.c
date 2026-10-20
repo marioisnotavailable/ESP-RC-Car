@@ -20,6 +20,10 @@ static const char *TAG = "rc_pd";
 #define REG_DPM_SNK_PDO1   0x85
 #define REG_RDO_STATUS     0x91
 
+// Strom von PDO2: STUSB4500 nimmt nur Source-PDOs, die diesen Strom liefern koennen.
+// Niedrig halten, damit auch schwache 12-V-Netzteile akzeptiert werden.
+#define PD_PDO2_MA         1000
+
 #define CMD_SEND_SOFT_RST  0x26
 #define TX_HDR_SOFT_RST    0x0D
 
@@ -145,7 +149,7 @@ esp_err_t rc_pd_init(void)
     uint8_t n = 2;
     err = pd_write(REG_DPM_PDO_NUMB, &n, 1);
     if (err == ESP_OK) err = rc_pd_set_pdo(1, 5000, 1500);
-    if (err == ESP_OK) err = rc_pd_set_pdo(2, 12000, 3000);
+    if (err == ESP_OK) err = rc_pd_set_pdo(2, 12000, PD_PDO2_MA);
     if (err == ESP_OK) err = rc_pd_request_renegotiate();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "PDO config failed: %s", esp_err_to_name(err));
