@@ -1,6 +1,7 @@
 #include "rc_pd.h"
 #include "rc_common.h"
 #include "driver/i2c.h"
+#include "esp_adc/adc_oneshot.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -23,6 +24,37 @@ static const char *TAG = "rc_pd";
 #define TX_HDR_SOFT_RST    0x0D
 
 static bool s_ready;
+static adc_oneshot_unit_handle_t s_adc;
+
+// VBUS ueber Teiler (PIN_VBUSADC = GPIO14 = ADC2 CH3); -1 bei Fehler
+static int vbus_mv(void)
+{
+    if (!s_adc) {
+        adc_oneshot_unit_init_cfg_t u = { .unit_id = ADC_UNIT_2 };
+        if (adc_oneshot_new_unit(&u, &s_adc) != ESP_OK) { s_adc = NULL; return -1; }
+        adc_oneshot_chan_cfg_t c = { .atten = ADC_ATTEN_DB_12, .bitwidth = ADC_BITWIDTH_DEFAULT };
+        if (adc_oneshot_config_channel(s_adc, ADC_CHANNEL_3, &c) != ESP_OK) return -1;
+    }
+    int sum = 0, n = 0, raw;
+    for (int i = 0; i < 16; i++) {
+        if (adc_oneshot_read(s_adc, ADC_CHANNEL_3, &raw) == ESP_OK) { sum += raw; n++; }
+    }
+    if (!n) return -1;
+    float v = ((float)sum / n / 4095.0f) * 3.1f * VBUS_DIVIDER;
+    return (int)(v * 1000.0f);
+}
+
+static void dump_sink_pdos(void)
+{
+    uint8_t n = 0, b[4];
+    pd_read(REG_DPM_PDO_NUMB, &n, 1);
+    ESP_LOGI(TAG, "DPM_PDO_NUMB=%u", n & 7);
+    for (int i = 0; i < 3; i++) {
+        if (pd_read(REG_DPM_SNK_PDO1 + 4 * i, b, 4) != ESP_OK) continue;
+        uint32_t p = b[0] | (b[1] << 8) | (b[2] << 16) | ((uint32_t)b[3] << 24);
+        ESP_LOGI(TAG, "sink PDO%d: %u mV %u mA", i + 1, ((p >> 10) & 0x3FF) * 50, (p & 0x3FF) * 10);
+    }
+}
 
 static esp_err_t pd_write(uint8_t reg, const uint8_t *data, size_t len)
 {
@@ -69,14 +101,11 @@ esp_err_t rc_pd_get_status(rc_pd_status_t *out)
     uint32_t v = rdo[0] | (rdo[1] << 8) | (rdo[2] << 16) | ((uint32_t)rdo[3] << 24);
     uint8_t pos = (v >> 28) & 0x7;
     out->object_pos = pos;
-    if (pos < 1 || pos > 3) return ESP_OK;
+    if (pos < 1) return ESP_OK;
 
-    // Vertragsspannung = Spannung des angeforderten Sink-PDO
-    uint8_t pdo[4];
-    err = pd_read(REG_DPM_SNK_PDO1 + 4 * (pos - 1), pdo, 4);
-    if (err != ESP_OK) return err;
-    uint32_t p = pdo[0] | (pdo[1] << 8) | (pdo[2] << 16) | ((uint32_t)pdo[3] << 24);
-    out->voltage_mv = ((p >> 10) & 0x3FF) * 50;
+    // pos = Index im Source-Angebot des Netzteils (nicht Sink-Tabelle!)
+    int mv = vbus_mv();
+    out->voltage_mv = mv > 0 ? (uint16_t)mv : 0;
     out->attached = true;
     return ESP_OK;
 }
@@ -121,6 +150,7 @@ esp_err_t rc_pd_init(void)
         ESP_LOGE(TAG, "PDO config failed: %s", esp_err_to_name(err));
         return err;
     }
+    dump_sink_pdos();
     s_ready = true;
     return ESP_OK;
 }
@@ -134,7 +164,7 @@ void pd_task(void *arg)
     while (1) {
         rc_pd_status_t st;
         if (s_ready && rc_pd_get_status(&st) == ESP_OK) {
-            ESP_LOGI(TAG, "contract=%d pos=%u %u mV", st.attached, st.object_pos, st.voltage_mv);
+            ESP_LOGI(TAG, "contract=%d src_pdo=%u vbus=%d mV", st.attached, st.object_pos, vbus_mv());
         }
         vTaskDelay(pdMS_TO_TICKS(2000));
     }

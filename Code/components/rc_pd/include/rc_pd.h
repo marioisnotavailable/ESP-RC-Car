@@ -12,8 +12,8 @@
 
 typedef struct {
     bool     attached;       // PD-Vertrag aktiv (RDO object position != 0)
-    uint8_t  object_pos;     // gewaehlter PDO (1..3), 0 = kein Vertrag
-    uint16_t voltage_mv;     // vertraglich vereinbarte Spannung
+    uint8_t  object_pos;     // Index im Source-Angebot des Netzteils, 0 = kein Vertrag
+    uint16_t voltage_mv;     // gemessene VBUS-Spannung (ADC)
 } rc_pd_status_t;
 
 esp_err_t rc_pd_init(void);

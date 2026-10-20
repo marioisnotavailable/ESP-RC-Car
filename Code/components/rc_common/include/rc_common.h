@@ -49,6 +49,8 @@ extern EventGroupHandle_t  rc_events;
 // Batterie ADC (GPIO8 = ADC1 CH7), VBUS ADC (GPIO14 = ADC2 CH3)
 #define BATT_ADC_CHANNEL  ADC_CHANNEL_7
 #define PIN_VBATADC       8
+#define VBAT_DIVIDER      ((27.0f + 12.0f) / 12.0f)    // R43 27k / R44 12k = 3.25
+#define VBUS_DIVIDER      ((390.0f + 27.0f) / 27.0f)   // R37 390k / R38 27k = 15.44
 #define PIN_VBUSADC       14
 
 // STUSB4500 USB-PD (I2C)

@@ -193,7 +193,7 @@ static int read_battery_percent(void)
 
     float avg_raw = (float)(sum / samples);
     float v_adc   = (avg_raw / 4095.0f) * 3.1f * settings.adc_corr_factor;
-    float v_batt  = v_adc * 3.0f; // voltage divider 1:3
+    float v_batt  = v_adc * VBAT_DIVIDER;
 
     g_vbatt = v_batt;
 
