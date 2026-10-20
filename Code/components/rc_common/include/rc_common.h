@@ -45,6 +45,11 @@ extern EventGroupHandle_t  rc_events;
 // Batterie ADC
 #define BATT_ADC_CHANNEL  ADC_CHANNEL_0   // GPIO1
 
+// STUSB4500 USB-PD (I2C)
+// TODO verify against schematic (Pins unbestaetigt)
+#define PIN_PD_SDA  41
+#define PIN_PD_SCL  42
+
 // Charge restart
 #define PIN_CHARGE_RESTART  47
 

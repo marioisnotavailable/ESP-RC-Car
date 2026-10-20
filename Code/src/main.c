@@ -9,6 +9,7 @@
 #include "rc_common.h"
 #include "rc_system.h"
 #include "rc_features.h"
+#include "rc_pd.h"
 
 // Uncomment to run drive test (forward/stop/backward/stop loop) instead of normal app
 // #define TEST_DRIVE
@@ -63,8 +64,8 @@ void app_main(void) {
 #elif RC_ISOLATED
     // PCB-Bringup: nur gewaehlte Features, kein Recovery-Zaehler (Bootloops erwartet)
     rc_settings_load();
-    ESP_LOGW(TAG, "ISOLATED mode: wifi=%d motor=%d servo=%d battery=%d bg=%d",
-             RC_EN_WIFI, RC_EN_MOTOR, RC_EN_SERVO, RC_EN_BATTERY, RC_EN_BG);
+    ESP_LOGW(TAG, "ISOLATED mode: wifi=%d motor=%d servo=%d battery=%d bg=%d pd=%d",
+             RC_EN_WIFI, RC_EN_MOTOR, RC_EN_SERVO, RC_EN_BATTERY, RC_EN_BG, RC_EN_PD);
 #if RC_EN_MOTOR
     xTaskCreate(motor_task,    "motor",    4096, NULL, 10, NULL);
 #endif
@@ -80,6 +81,9 @@ void app_main(void) {
 #if RC_EN_BG
     xTaskCreate(bg_task,       "bg",       6144, NULL, 2,  NULL);
 #endif
+#if RC_EN_PD
+    xTaskCreate(pd_task,       "pd",       3072, NULL, 4,  NULL);
+#endif
 #else
     rc_recovery_check();
     rc_settings_load();
@@ -89,6 +93,7 @@ void app_main(void) {
     xTaskCreate(comms_task,    "comms",    8192, NULL, 7,  NULL);
     xTaskCreate(system_task,   "system",   6144, NULL, 5,  NULL);
     xTaskCreate(bg_task,       "bg",       6144, NULL, 2,  NULL);
+    xTaskCreate(pd_task,       "pd",       3072, NULL, 4,  NULL);
 #endif
 
     vTaskDelete(NULL);
