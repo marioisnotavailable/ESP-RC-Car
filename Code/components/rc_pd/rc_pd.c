@@ -44,17 +44,6 @@ static int vbus_mv(void)
     return (int)(v * 1000.0f);
 }
 
-static void dump_sink_pdos(void)
-{
-    uint8_t n = 0, b[4];
-    pd_read(REG_DPM_PDO_NUMB, &n, 1);
-    ESP_LOGI(TAG, "DPM_PDO_NUMB=%u", n & 7);
-    for (int i = 0; i < 3; i++) {
-        if (pd_read(REG_DPM_SNK_PDO1 + 4 * i, b, 4) != ESP_OK) continue;
-        uint32_t p = b[0] | (b[1] << 8) | (b[2] << 16) | ((uint32_t)b[3] << 24);
-        ESP_LOGI(TAG, "sink PDO%d: %u mV %u mA", i + 1, ((p >> 10) & 0x3FF) * 50, (p & 0x3FF) * 10);
-    }
-}
 
 static esp_err_t pd_write(uint8_t reg, const uint8_t *data, size_t len)
 {
@@ -68,6 +57,18 @@ static esp_err_t pd_write(uint8_t reg, const uint8_t *data, size_t len)
 static esp_err_t pd_read(uint8_t reg, uint8_t *data, size_t len)
 {
     return i2c_master_write_read_device(PD_I2C_PORT, PD_I2C_ADDR, &reg, 1, data, len, PD_I2C_TMO);
+}
+
+static void dump_sink_pdos(void)
+{
+    uint8_t n = 0, b[4];
+    pd_read(REG_DPM_PDO_NUMB, &n, 1);
+    ESP_LOGI(TAG, "DPM_PDO_NUMB=%u", n & 7);
+    for (int i = 0; i < 3; i++) {
+        if (pd_read(REG_DPM_SNK_PDO1 + 4 * i, b, 4) != ESP_OK) continue;
+        uint32_t p = b[0] | (b[1] << 8) | (b[2] << 16) | ((uint32_t)b[3] << 24);
+        ESP_LOGI(TAG, "sink PDO%d: %u mV %u mA", i + 1, ((p >> 10) & 0x3FF) * 50, (p & 0x3FF) * 10);
+    }
 }
 
 esp_err_t rc_pd_set_pdo(uint8_t pdo_num, uint16_t mv, uint16_t ma)
