@@ -83,6 +83,13 @@ esp_err_t rc_pd_get_status(rc_pd_status_t *out)
 
 esp_err_t rc_pd_init(void)
 {
+    // RESET_USBPD ist active-high: kurz ausloesen, dann low = Chip laeuft
+    gpio_set_direction(PIN_PD_RESET, GPIO_MODE_OUTPUT);
+    gpio_set_level(PIN_PD_RESET, 1);
+    vTaskDelay(pdMS_TO_TICKS(10));
+    gpio_set_level(PIN_PD_RESET, 0);
+    vTaskDelay(pdMS_TO_TICKS(50));
+
     i2c_config_t cfg = {
         .mode = I2C_MODE_MASTER,
         .sda_io_num = PIN_PD_SDA,
