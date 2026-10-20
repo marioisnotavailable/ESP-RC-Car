@@ -8,6 +8,7 @@
 #include "freertos/task.h"
 #include "rc_common.h"
 #include "rc_system.h"
+#include "rc_features.h"
 
 // Uncomment to run drive test (forward/stop/backward/stop loop) instead of normal app
 // #define TEST_DRIVE
@@ -59,6 +60,26 @@ void app_main(void) {
     ESP_LOGI(TAG, "ESP-RC-Car TEST_DRIVE mode");
     xTaskCreate(motor_task,     "motor",  4096, NULL, 10, NULL);
     xTaskCreate(test_drive_task,"test",   4096, NULL, 3,  NULL);
+#elif RC_ISOLATED
+    // PCB-Bringup: nur gewaehlte Features, kein Recovery-Zaehler (Bootloops erwartet)
+    rc_settings_load();
+    ESP_LOGW(TAG, "ISOLATED mode: wifi=%d motor=%d servo=%d battery=%d bg=%d",
+             RC_EN_WIFI, RC_EN_MOTOR, RC_EN_SERVO, RC_EN_BATTERY, RC_EN_BG);
+#if RC_EN_MOTOR
+    xTaskCreate(motor_task,    "motor",    4096, NULL, 10, NULL);
+#endif
+#if RC_EN_SERVO
+    xTaskCreate(steering_task, "steering", 3072, NULL, 8,  NULL);
+#endif
+#if RC_EN_WIFI
+    xTaskCreate(comms_task,    "comms",    8192, NULL, 7,  NULL);
+#endif
+#if RC_EN_BATTERY
+    xTaskCreate(system_task,   "system",   6144, NULL, 5,  NULL);
+#endif
+#if RC_EN_BG
+    xTaskCreate(bg_task,       "bg",       6144, NULL, 2,  NULL);
+#endif
 #else
     rc_recovery_check();
     rc_settings_load();
