@@ -1,5 +1,6 @@
 #include "rc_pd.h"
 #include "rc_common.h"
+#include "rc_system.h"
 #include "driver/i2c.h"
 #include "esp_adc/adc_oneshot.h"
 #include "esp_log.h"
@@ -64,7 +65,8 @@ static int vbus_mv(void)
         if (adc_oneshot_read(s_adc, ADC_CHANNEL_3, &raw) == ESP_OK) { sum += raw; n++; }
     }
     if (!n) return -1;
-    float v = ((float)sum / n / 4095.0f) * 3.1f * VBUS_DIVIDER;
+    float v = ((float)sum / n / 4095.0f) * 3.1f * VBUS_DIVIDER * settings.vbus_corr_factor;
+    g_vbus = v;
     return (int)(v * 1000.0f);
 }
 
@@ -340,6 +342,15 @@ void pd_task(void *arg)
                     s_renegotiated_this_attach = true;
                     rc_pd_get_status(&st);
                 }
+            }
+            {   // Rohdump zur Diagnose: 0x0B..0x16 (Alert/CC/Monitoring/HW-Fault/PRT), PE_FSM, RDO
+                uint8_t raw[12] = {0}, pe = 0, rdo[4] = {0};
+                pd_read(REG_ALERT_STATUS_1, raw, sizeof(raw));
+                pd_read(REG_PE_FSM, &pe, 1);
+                pd_read(REG_RDO_REG_STATUS, rdo, 4);
+                ESP_LOGI(TAG, "raw 0B..16: %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X | PE=%02X RDO=%02X%02X%02X%02X",
+                         raw[0], raw[1], raw[2], raw[3], raw[4], raw[5], raw[6], raw[7],
+                         raw[8], raw[9], raw[10], raw[11], pe, rdo[3], rdo[2], rdo[1], rdo[0]);
             }
             ESP_LOGI(TAG, "cc=%d pe=0x%02X contract=%d src_pdo=%u mismatch=%d cur=%u/%u mA vbus=%u mV",
                      st.cable_attached, st.pe_fsm, st.attached, st.object_pos,

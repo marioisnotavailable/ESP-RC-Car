@@ -136,6 +136,19 @@
         <input id="cfg-realVoltage" type="number" min="1" max="15" step="0.01" style="width:100px" placeholder="e.g. 8.25" />
         <button id="cfg-calibrate">Calibrate</button>
       </div>
+      <div class="setting">
+        <label>VBUS Correction Factor</label>
+        <span id="cfg-vbusCorr">--</span>
+      </div>
+      <div class="setting">
+        <label>VBUS Reading</label>
+        <span id="cfg-vBus">--</span><span class="unit">V</span>
+      </div>
+      <div class="setting">
+        <label>Calibrate VBUS (Multimeter V)</label>
+        <input id="cfg-realVbus" type="number" min="1" max="25" step="0.01" style="width:100px" placeholder="e.g. 12.05" />
+        <button id="cfg-calibrate-vbus">Calibrate</button>
+      </div>
 
       <h4>Motor</h4>
       <div class="setting">
@@ -168,6 +181,7 @@
       <h3>ADC Monitor</h3>
       <p><strong>V_ADC (calibrated):</strong> <code id="adc-vAdc">--</code> V</p>
       <p><strong>V_Battery:</strong> <code id="adc-vBatt">--</code> V</p>
+      <p><strong>V_Bus (USB-C):</strong> <code id="adc-vBus">--</code> V</p>
     </section>
   </main>
 

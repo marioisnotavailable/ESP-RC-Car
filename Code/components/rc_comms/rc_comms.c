@@ -715,14 +715,14 @@ static esp_err_t api_reboot_handler(httpd_req_t *req)
 /* GET /api/adc */
 static esp_err_t api_adc_handler(httpd_req_t *req)
 {
-    float v_adc  = g_vbatt / 3.0f;  /* reverse 1:3 divider */
+    float v_adc  = g_vbatt / VBAT_DIVIDER;
     float v_batt = g_vbatt;
     int   pct    = battery_percent;
 
-    char buf[96];
+    char buf[128];
     snprintf(buf, sizeof(buf),
-             "{\"vAdc\":%.3f,\"vBatt\":%.3f,\"percent\":%d}",
-             (double)v_adc, (double)v_batt, pct);
+             "{\"vAdc\":%.3f,\"vBatt\":%.3f,\"vBus\":%.3f,\"percent\":%d}",
+             (double)v_adc, (double)v_batt, (double)g_vbus, pct);
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, buf);
@@ -751,7 +751,9 @@ static esp_err_t api_settings_get_handler(httpd_req_t *req)
              "\"battOffV\":%.4f,"
              "\"maxThrottlePct\":%u,"
              "\"adcCorrFactor\":%.6f,"
-             "\"vBatt\":%.3f"
+             "\"vbusCorrFactor\":%.6f,"
+             "\"vBatt\":%.3f,"
+             "\"vBus\":%.3f"
              "}",
              settings.ota_enabled        ? "true" : "false",
              (unsigned long)settings.ota_interval_ms,
@@ -768,7 +770,9 @@ static esp_err_t api_settings_get_handler(httpd_req_t *req)
              (double)settings.batt_off_v,
              settings.max_throttle_pct,
              (double)settings.adc_corr_factor,
-             (double)g_vbatt);
+             (double)settings.vbus_corr_factor,
+             (double)g_vbatt,
+             (double)g_vbus);
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, buf);
@@ -802,6 +806,12 @@ static esp_err_t api_settings_post_handler(httpd_req_t *req)
     if (get_param(body, "adcRealVoltage", val, sizeof(val)) && g_vbatt > 0.0f) {
         float real_v = strtof(val, NULL);
         settings.adc_corr_factor = real_v * settings.adc_corr_factor / g_vbatt;
+    }
+
+    /* Special: recalibrate VBUS correction factor (needs running pd_task) */
+    if (get_param(body, "vbusRealVoltage", val, sizeof(val)) && g_vbus > 0.5f) {
+        float real_v = strtof(val, NULL);
+        if (real_v > 0.5f) settings.vbus_corr_factor = real_v * settings.vbus_corr_factor / g_vbus;
     }
 
     rc_settings_save();
@@ -1167,8 +1177,8 @@ void comms_task(void *arg)
         WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N);
     esp_wifi_set_protocol(WIFI_IF_AP,
         WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N);
-    esp_wifi_set_bandwidth(WIFI_IF_AP, WIFI_BW20);
-    esp_wifi_set_bandwidth(WIFI_IF_STA, WIFI_BW20);
+    esp_wifi_set_bandwidth(WIFI_IF_AP, WIFI_BW_HT20);
+    esp_wifi_set_bandwidth(WIFI_IF_STA, WIFI_BW_HT20);
 
     WifiList wl;
     bool connected     = false;

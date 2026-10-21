@@ -36,10 +36,12 @@ DeviceSettings settings = {
     .batt_off_v         = 7.5f,
     .max_throttle_pct   = 100,
     .adc_corr_factor    = 1.0f,
+    .vbus_corr_factor   = 1.0f,
 };
 
 volatile int   battery_percent = 0;
 volatile float g_vbatt         = 0.0f;
+volatile float g_vbus          = 0.0f;
 static adc_oneshot_unit_handle_t adc_handle;
 
 // ── NVS Settings ─────────────────────────────────────────────────────────────
@@ -75,6 +77,7 @@ void rc_settings_load(void)
     if (nvs_get_blob(h, "batt_warn_v",      &f, &sz) == ESP_OK) settings.batt_warn_v      = f;
     if (nvs_get_blob(h, "batt_off_v",       &f, &sz) == ESP_OK) settings.batt_off_v       = f;
     if (nvs_get_blob(h, "adc_corr_factor",  &f, &sz) == ESP_OK) settings.adc_corr_factor  = f;
+    if (nvs_get_blob(h, "vbus_corr_factor", &f, &sz) == ESP_OK) settings.vbus_corr_factor = f;
 
     // string field
     size_t str_len = sizeof(settings.ap_prefix);
@@ -111,6 +114,7 @@ void rc_settings_save(void)
     nvs_set_blob(h, "batt_warn_v",     &settings.batt_warn_v,     sizeof(float));
     nvs_set_blob(h, "batt_off_v",      &settings.batt_off_v,      sizeof(float));
     nvs_set_blob(h, "adc_corr_factor", &settings.adc_corr_factor, sizeof(float));
+    nvs_set_blob(h, "vbus_corr_factor", &settings.vbus_corr_factor, sizeof(float));
 
     // string field
     nvs_set_str(h, "ap_prefix", settings.ap_prefix);

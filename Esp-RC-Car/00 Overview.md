@@ -46,6 +46,7 @@ app_main() → init → rc_recovery_check() → rc_settings_load()
 | [[Firmware/rc_websocket]] | comms_task | WebSocket esp_http_server Port 80 |
 | [[Firmware/rc_network]] | comms_task | WiFi esp_wifi, UDP Discovery |
 | [[Firmware/rc_battery]] | system_task | ADC adc_oneshot, Batterie % |
+| [[Firmware/rc_pd]] | pd_task | STUSB4500 USB-PD, 12 V Vertrag |
 | [[Firmware/rc_ota]] | bg_task | FOTA esp_https_ota |
 | [[Firmware/rc_recovery]] | system_task | Crash-Counter, Safe Mode |
 | [[Firmware/rc_steering]] | system_task | Servo LEDC, GPIO4 |

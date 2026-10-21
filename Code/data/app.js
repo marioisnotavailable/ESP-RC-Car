@@ -87,6 +87,11 @@ async function refreshAdcMonitor() {
     const adcVBattEl = document.getElementById('adc-vBatt');
     const cfgVBattEl = document.getElementById('cfg-vBatt');
     const cfgBattPercentEl = document.getElementById('cfg-battPercent');
+    const vBus = Number(adc.vBus);
+    const adcVBusEl = document.getElementById('adc-vBus');
+    const cfgVBusEl = document.getElementById('cfg-vBus');
+    if (adcVBusEl && Number.isFinite(vBus)) adcVBusEl.textContent = vBus.toFixed(2);
+    if (cfgVBusEl && Number.isFinite(vBus)) cfgVBusEl.textContent = vBus.toFixed(2);
 
     if (adcVAdcEl && Number.isFinite(vAdc)) adcVAdcEl.textContent = vAdc.toFixed(3);
     if (adcVBattEl && Number.isFinite(vBatt)) adcVBattEl.textContent = vBatt.toFixed(2);
@@ -450,6 +455,7 @@ window.addEventListener('DOMContentLoaded', () => {
     cfg['cfg-maxThrottle'].value = String(s.maxThrottlePct);
     document.getElementById('cfg-adcCorr').textContent = s.adcCorrFactor.toFixed(4);
     document.getElementById('cfg-vBatt').textContent = s.vBatt.toFixed(2);
+    document.getElementById('cfg-vbusCorr').textContent = s.vbusCorrFactor.toFixed(4);
   };
 
   const refreshSettingsUi = async () => {
@@ -505,6 +511,18 @@ window.addEventListener('DOMContentLoaded', () => {
       document.getElementById('cfg-adcCorr').textContent = s.adcCorrFactor.toFixed(4);
       document.getElementById('cfg-vBatt').textContent = s.vBatt.toFixed(2);
       cfgMsg.textContent = 'Calibrated';
+      cfgMsg.classList.remove('err');
+    }
+  });
+
+  document.getElementById('cfg-calibrate-vbus').addEventListener('click', async () => {
+    const realV = document.getElementById('cfg-realVbus').value;
+    if (!realV) return;
+    const res = await apiSaveSettings({ vbusRealVoltage: realV });
+    if (res && res.ok) {
+      const s = await apiGetSettings();
+      document.getElementById('cfg-vbusCorr').textContent = s.vbusCorrFactor.toFixed(4);
+      cfgMsg.textContent = 'VBUS calibrated';
       cfgMsg.classList.remove('err');
     }
   });

@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.16.0)
 set(EXTRA_COMPONENT_DIRS src)
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+set(PROJECT_VER "1.0.0")
 project(Code)
 if(COMMAND littlefs_create_partition_image)
 	littlefs_create_partition_image(littlefs data FLASH_IN_PROJECT)

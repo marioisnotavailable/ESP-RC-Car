@@ -17,11 +17,13 @@ typedef struct {
     float    batt_off_v;
     uint8_t  max_throttle_pct;
     float    adc_corr_factor;
+    float    vbus_corr_factor;
 } DeviceSettings;
 
 extern DeviceSettings settings;
 extern volatile int   battery_percent;
 extern volatile float g_vbatt;
+extern volatile float g_vbus;   // VBUS in V (kalibriert), gesetzt von rc_pd
 
 void rc_settings_load(void);
 void rc_settings_save(void);
